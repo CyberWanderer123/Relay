@@ -65,7 +65,7 @@ export function createRelay(db: DB, baseUrl: string) {
   const links = (id: string): FormLinks => ({
     fill: `${baseUrl}/f/${id}`,
     claude: `${baseUrl}/c/${id}`,
-    clean: `${baseUrl}/f/${id}/clean`,
+    clean: `${baseUrl}/a/${id}`,
     review: `${baseUrl}/f/${id}/review`,
   });
 

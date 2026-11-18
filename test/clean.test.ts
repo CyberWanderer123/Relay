@@ -7,7 +7,7 @@ import { sampleForm } from "./helpers.js";
 const links = (id: string) => ({
   fill: `https://relay.test/f/${id}`,
   claude: `https://relay.test/c/${id}`,
-  clean: `https://relay.test/f/${id}/clean`,
+  clean: `https://relay.test/a/${id}`,
   review: `https://relay.test/f/${id}/review`,
 });
 

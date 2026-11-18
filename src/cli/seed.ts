@@ -31,6 +31,6 @@ const created = await relay.createForm(
 console.log(`Created form ${created.id}\n`);
 console.log(`Fill:   ${created.links.fill}`);
 console.log(`Claude: ${created.links.claude}`);
-console.log(`Clean:  ${config.baseUrl}/f/${created.id}/clean\n`);
+console.log(`Clean:  ${config.baseUrl}/a/${created.id}\n`);
 console.log("Share message:\n");
 console.log(created.share_message);

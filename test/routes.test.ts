@@ -72,6 +72,7 @@ describe("creator API", () => {
     expect(closed).toMatchObject({ status: "closed", final_response_count: 5 });
     expect((await app.request(`/f/${id}`)).status).toBe(410);
     expect((await app.request(`/f/${id}/clean`)).status).toBe(410);
+    expect((await app.request(`/a/${id}`)).status).toBe(410);
     expect((await app.request(`/f/${id}/review?q1=Great`)).status).toBe(410);
     expect((await app.request(`/c/${id}`)).status).toBe(410);
     expect((await app.request(`/f/${id}/submit`, form({ q1: "Great", q3: "1" }))).status).toBe(410);
@@ -229,7 +230,7 @@ describe("Claude redirect", () => {
     const loc = new URL(res.headers.get("location")!);
     expect(loc.origin).toBe("https://claude.ai");
     const q = loc.searchParams.get("q")!;
-    expect(q).toContain(`https://relay.test/f/${id}/clean`);
+    expect(q).toContain(`https://relay.test/a/${id}`);
     expect(q.length).toBeLessThan(300);
   });
 });
@@ -240,5 +241,18 @@ describe("robots.txt", () => {
     const txt = await (await app.request("/robots.txt")).text();
     expect(txt).not.toMatch(/Disallow:\s*\/f\//);
     expect(txt).toMatch(/Disallow:\s*\/api\//);
+  });
+});
+
+describe("assistant text page", () => {
+  it("serves the same text at /a/:id and the older /f/:id/clean", async () => {
+    const { app, relay } = setup();
+    const { id } = await relay.createForm(sampleForm);
+    const a = await app.request(`/a/${id}`);
+    const old = await app.request(`/f/${id}/clean`);
+    expect(a.status).toBe(200);
+    expect(a.headers.get("content-type")).toContain("text/plain");
+    expect(await a.text()).toBe(await old.text());
+    expect((await app.request("/a/zzzzzzzzzzzzzz")).status).toBe(404);
   });
 });
