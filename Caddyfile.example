@@ -1,0 +1,5 @@
+# Caddy terminates HTTPS and proxies to Relay. Replace the domain with yours.
+# Note: no `log` directive — review links carry answers in their query strings.
+forms.example.com {
+	reverse_proxy relay:8787
+}

@@ -1,0 +1,26 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      RELAY_BASE_URL: ${RELAY_BASE_URL:?set RELAY_BASE_URL to your public https origin}
+      RELAY_OWNER_KEY: ${RELAY_OWNER_KEY:?set RELAY_OWNER_KEY}
+      RELAY_TRUST_PROXY: "1"
+    volumes:
+      - relay-data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - relay
+
+volumes:
+  relay-data:
+  caddy-data:

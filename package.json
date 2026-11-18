@@ -1,0 +1,38 @@
+{
+  "name": "relay",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "mcp": "tsx src/mcp/stdio.ts",
+    "seed": "tsx src/cli/seed.ts",
+    "forms:delete": "tsx src/cli/delete-form.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "description": "Relay — forms that travel through conversation. Create forms from Claude via MCP, share two links, read answers back.",
+  "dependencies": {
+    "@hono/node-server": "^2.1.9",
+    "@libsql/client": "^0.18.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "hono": "^4.13.19",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "relay-mcp": "dist/mcp/stdio.js"
+  }
+}
