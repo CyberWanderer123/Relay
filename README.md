@@ -130,7 +130,7 @@ No tool sends, emails or deletes anything. Responses come back inside a labelled
 
 **Browser:** `/f/:id` → fill in → Submit → thank-you page.
 
-**Plain Claude:** `/c/:id` opens a new Claude chat (`claude.ai/new?q=…`) with the whole form already in the message — questions, options and the review-link template. The respondent presses Send. Nothing needs fetching, which matters because Claude will not fetch a link from a prefilled message. Claude asks the questions and hands back a review link (`/f/:id/review?q1=…&q2=…`); the person checks the answers and presses Submit. A GET never saves anything. Forms too long for a link (over 8,000 characters) get a copy-and-paste page instead, pointing Claude at `/a/:id`.
+**Plain Claude:** `/c/:id` opens a new Claude chat (`claude.ai/new?q=…`) with the whole form already in the message — questions, options and the review-link template. The respondent presses Send. Claude first drafts what it can from the respondent's memory and past chats, shows the draft, then asks only what is still open. (claude.ai shows a caution banner on every link that prefills a prompt; that cannot be turned off.) Nothing needs fetching, which matters because Claude will not fetch a link from a prefilled message. Claude asks the questions and hands back a review link (`/f/:id/review?q1=…&q2=…`); the person checks the answers and presses Submit. A GET never saves anything. Forms too long for a link (over 8,000 characters) get a copy-and-paste page instead, pointing Claude at `/a/:id`.
 
 Both paths end at the same validated `POST /f/:id/submit`.
 

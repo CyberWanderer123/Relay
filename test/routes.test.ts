@@ -280,3 +280,21 @@ describe("assistant text page", () => {
     expect((await app.request("/a/zzzzzzzzzzzzzz")).status).toBe(404);
   });
 });
+
+describe("review link template", () => {
+  it("is returned with the form, and a link built from it fills the review page", async () => {
+    const { app, id, created } = await withForm();
+    const template = (created as unknown as { links: { review_template: string } }).links.review_template;
+    expect(template).toBe(`https://relay.test/f/${id}/review?q1=<answer>&q2=<option>&q2=<another option>&q3=<answer>&q4=<answer>&q5=<answer>`);
+    const filled = template
+      .replace("q1=<answer>", "q1=Great")
+      .replace("q2=<option>", "q2=Intro")
+      .replace("q2=<another option>", "q2=Lab")
+      .replace("q3=<answer>", "q3=7")
+      .replace(/&q[45]=<answer>/g, "");
+    const page = await (await app.request(new URL(filled).pathname + new URL(filled).search)).text();
+    expect(page).toContain("Great");
+    expect(page).toContain("Lab");
+    expect(page).toContain(">7<");
+  });
+});

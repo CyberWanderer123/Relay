@@ -56,7 +56,7 @@ export function createMcpServer(backend: Backend): McpServer {
 Use this when the creator wants to collect answers from people: feedback, RSVPs, sign-ups, quick surveys.
 Turn their request into the field list yourself. Keep questions short and plain, mark only what truly matters as required, and prefer choice questions when the answers fall into a few known options.
 Field types: short_text (one line), long_text (paragraph), single_choice and multi_choice (2–50 options, no semicolons), number, email. Ids are optional and default to q1, q2, ….
-Returns the form id, the fill link (browser), the Claude link (answer in a chat), and share_message. Show the creator the share_message exactly as returned — they send it themselves; Relay never messages anyone.`,
+Returns the form id, the fill link (browser), the Claude link (answer in a chat), links.review_template (how to pre-fill the review page: replace each <…> with a URL-encoded answer, repeat multi_choice parameters, leave out skipped optional questions), and share_message. Show the creator the share_message exactly as returned — they send it themselves; Relay never messages anyone.`,
       inputSchema: { ...CreateFormInput.shape, channel, intro },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
@@ -86,7 +86,7 @@ Use this to find a form's id when the creator refers to a form by name, or to gi
     "get_form",
     {
       title: "Get a form",
-      description: `Get one form's title, questions, status, response count, links and share message.
+      description: `Get one form's title, questions, status, response count, links (including links.review_template, the format for pre-filling the review page) and share message.
 Use this to re-share an existing form (optionally with a different channel or opening line) or to check what a form asks before reading its responses.`,
       inputSchema: { form_id: formId, channel, intro },
       annotations: { readOnlyHint: true, openWorldHint: false },

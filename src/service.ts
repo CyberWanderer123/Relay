@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { reviewLinkTemplate } from "./clean.js";
 import { makeQueries, type DB } from "./db.js";
 import { notFound, RelayError } from "./errors.js";
 import {
@@ -138,7 +139,7 @@ export function createRelay(db: DB, baseUrl: string) {
         title: form.title,
         status: form.status,
         question_count: form.fields.length,
-        links: { fill: links(form.id).fill, claude: links(form.id).claude },
+        links: { fill: links(form.id).fill, claude: links(form.id).claude, review_template: reviewLinkTemplate(form, links(form.id)) },
         share_message: shareMessage(form, share),
       };
     },
@@ -166,7 +167,7 @@ export function createRelay(db: DB, baseUrl: string) {
         created_at: iso(form.created_at),
         response_count: Number(s.n),
         fields: form.fields,
-        links: { fill: links(id).fill, claude: links(id).claude },
+        links: { fill: links(id).fill, claude: links(id).claude, review_template: reviewLinkTemplate(form, links(id)) },
         share_message: shareMessage(form, share),
       };
     },
