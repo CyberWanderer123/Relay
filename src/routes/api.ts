@@ -4,14 +4,29 @@ import { RelayError } from "../errors.js";
 import type { ShareOptions } from "../service.js";
 import { keyMatches, type Deps } from "./deps.js";
 
-/** Bearer-key guard shared by /api and /mcp. `allowQueryKey` permits ?key= for connectors that cannot set headers. */
+/**
+ * Owner-key guard shared by /api and /mcp.
+ * Accepts `Authorization: Bearer <key>`, a bare `Authorization: <key>` (connector screens send
+ * header values exactly as typed, and the "Bearer " prefix is easy to forget), and — when
+ * `allowQueryKey` is set — `?key=<key>` for connectors that can only take a URL.
+ * Rejections are logged with a reason, never with the presented value.
+ */
 export function requireOwnerKey(ownerKey: string | undefined, allowQueryKey = false): MiddlewareHandler {
   return async (c, next) => {
     if (!ownerKey) return c.json({ error: "The creator API is disabled. Set RELAY_OWNER_KEY to enable it." }, 503);
-    const header = c.req.header("authorization") ?? "";
+
+    const header = (c.req.header("authorization") ?? "").trim();
     const bearer = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim();
-    const presented = bearer ?? (allowQueryKey ? c.req.query("key") : undefined);
-    if (!presented || !keyMatches(presented, ownerKey)) {
+    const query = allowQueryKey ? c.req.query("key")?.trim() : undefined;
+    const candidates = [bearer ?? header, query].filter((v): v is string => Boolean(v));
+
+    if (!candidates.some((v) => keyMatches(v, ownerKey))) {
+      const reason = !candidates.length
+        ? "no key sent"
+        : header && !bearer && !query
+          ? "Authorization header without 'Bearer ' did not match"
+          : "key did not match";
+      console.warn(`auth rejected: ${c.req.method} ${c.req.path} — ${reason}`);
       c.header("WWW-Authenticate", 'Bearer realm="relay"');
       return c.json({ error: "Unauthorized. Send the owner key as 'Authorization: Bearer <key>'." }, 401);
     }

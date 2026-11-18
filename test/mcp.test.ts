@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
 import { localBackend } from "../src/mcp/backend.js";
 import { createMcpServer } from "../src/mcp/tools.js";
-import { auth, form, setup } from "./helpers.js";
+import { auth, form, KEY, setup } from "./helpers.js";
 
 async function connect() {
   const ctx = setup();
@@ -86,5 +86,65 @@ describe("/mcp over HTTP", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result: { tools: unknown[] } };
     expect(body.result.tools).toHaveLength(6);
+  });
+});
+
+describe("/mcp connector compatibility", () => {
+  const listTools = (headers: Record<string, string>, path = "/mcp") => ({
+    path,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    },
+  });
+
+  it("answers GET and DELETE with 405 instead of holding a stream open", async () => {
+    const { app } = setup();
+    for (const method of ["GET", "DELETE"]) {
+      const res = await app.request("/mcp", { method, headers: { ...auth, Accept: "text/event-stream" } });
+      expect(res.status).toBe(405);
+      expect(res.headers.get("allow")).toBe("POST");
+    }
+  });
+
+  it("accepts the key as Bearer, as a bare header value, or as ?key=", async () => {
+    const { app } = setup();
+    for (const { path, init } of [
+      listTools(auth),
+      listTools({ Authorization: KEY }),
+      listTools({}, `/mcp?key=${KEY}`),
+    ]) {
+      expect((await app.request(path, init)).status).toBe(200);
+    }
+  });
+
+  it("still rejects wrong or missing keys", async () => {
+    const { app } = setup();
+    for (const { path, init } of [
+      listTools({ Authorization: "Bearer wrong" }),
+      listTools({ Authorization: "wrong" }),
+      listTools({}, "/mcp?key=wrong"),
+      listTools({}),
+    ]) {
+      expect((await app.request(path, init)).status).toBe(401);
+    }
+  });
+
+  it("completes the initialize handshake", async () => {
+    const { app } = setup();
+    const res = await app.request("/mcp", {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "claude-ai", version: "1" } },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result: { serverInfo: { name: string } } };
+    expect(body.result.serverInfo.name).toBe("relay");
   });
 });
