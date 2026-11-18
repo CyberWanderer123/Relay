@@ -233,3 +233,12 @@ describe("Claude redirect", () => {
     expect(q.length).toBeLessThan(300);
   });
 });
+
+describe("robots.txt", () => {
+  it("lets Claude's fetcher read form pages, which stay noindex", async () => {
+    const { app } = setup();
+    const txt = await (await app.request("/robots.txt")).text();
+    expect(txt).not.toMatch(/Disallow:\s*\/f\//);
+    expect(txt).toMatch(/Disallow:\s*\/api\//);
+  });
+});

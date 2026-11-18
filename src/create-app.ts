@@ -54,7 +54,9 @@ export function createApp(relay: Relay, config: Config) {
     return c.body(CSS, 200, { "Content-Type": "text/css; charset=utf-8" });
   });
   app.get("/favicon.svg", (c) => c.body(FAVICON_SVG, 200, { "Content-Type": "image/svg+xml" }));
-  app.get("/robots.txt", (c) => c.text("User-agent: *\nDisallow: /f/\nDisallow: /c/\nDisallow: /api/\n"));
+  // Form pages must stay fetchable: "fill with Claude" has Claude read /f/:id/clean, and Claude's
+  // fetcher obeys robots.txt. Search engines are kept out by noindex headers/meta, not by this file.
+  app.get("/robots.txt", (c) => c.text("User-agent: *\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\n"));
 
   app.route("/", formRoutes(deps));
   app.route("/", cleanRoutes(deps));
