@@ -30,3 +30,22 @@ q4 | long_text | optional | What should we improve?
 q5 | email | optional | Email
 "
 `;
+
+exports[`chat prompt (prefilled into claude.ai) > matches the saved snapshot 1`] = `
+"Hi Claude! Please help me fill in this form: "Workshop feedback".
+Five quick questions.
+
+Ask me these questions one at a time, and use only what I tell you:
+
+1. How was the workshop? (pick one, required)
+   Options: Great; Okay; Poor
+2. Useful sessions? (pick any, optional)
+   Options: Intro; Lab; Panel
+3. Score 0–10 (a number, required)
+4. What should we improve? (a few sentences, optional)
+5. Email (an email address, optional)
+
+When we're done, give me this link with my answers filled in (each one URL-encoded), so I can check them and press Submit myself:
+https://relay.test/f/abc123xyz00000/review?q1=<answer 1>&q2=<a choice for 2>&q2=<another choice for 2>&q3=<answer 3>&q4=<answer 4>&q5=<answer 5>
+Leave out questions I skip. Choices must match an option exactly. If the link would be over about 2,000 characters, give me my answers as text to paste into https://relay.test/f/abc123xyz00000 instead."
+`;

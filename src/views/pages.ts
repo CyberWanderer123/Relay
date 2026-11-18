@@ -3,6 +3,7 @@ import { LIMITS } from "../schema.js";
 import type { FormLinks, StoredForm } from "../service.js";
 import { h, type Safe } from "./html.js";
 import { icons, layout } from "./layout.js";
+import { COPY_JS_VERSION } from "./scripts.js";
 
 export type Values = Record<string, string[]>;
 export type Errors = Record<string, string>;
@@ -189,6 +190,46 @@ function resultPage(o: {
   ${o.actions ?? ""}
 </section>`;
   return layout({ title: o.title, body, host: o.host, noindex: true });
+}
+
+/** /c/:id — copy the prepared message, then open Claude and paste it. */
+export function claudePage(o: { host: string; form: StoredForm; message: string; fillUrl: string }): string {
+  const n = o.form.fields.length;
+  const body = h`
+<section class="form-head">
+  <p class="eyebrow"><span class="dot mint"></span>Fill it with Claude · ${n} question${n === 1 ? "" : "s"}</p>
+  <h1 class="display">${o.form.title}</h1>
+  <p class="lede">Claude asks you the questions in a chat, then gives you a link to check your answers. Nothing is sent until you press Submit on that page.</p>
+</section>
+<div class="questions handoff">
+  <section class="q">
+    <p class="q-meta"><span class="q-num">01</span><span class="q-hint">Copy this message</span></p>
+    <label class="q-label" for="relay-message">Your message to Claude</label>
+    <textarea class="textarea message" id="relay-message" readonly rows="4" spellcheck="false">${o.message}</textarea>
+    <div class="copy-row">
+      <button class="btn btn-ghost" type="button" data-copy hidden>Copy message</button>
+      <p class="fine" id="copy-status" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+  <section class="q">
+    <p class="q-meta"><span class="q-num">02</span><span class="q-hint">Open Claude and paste it</span></p>
+    <p class="q-label">Start a new chat, paste the message and send it.</p>
+    <div class="copy-row">
+      <a class="btn btn-primary" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer" data-copy>${icons.chat}Copy and open Claude</a>
+    </div>
+    <p class="fine">Any assistant that can read web pages works too, such as ChatGPT or Gemini.</p>
+  </section>
+</div>
+<div class="actions">
+  <p class="fine">Why copy and paste? Claude only reads a link that you send it yourself. Prefer a normal form? <a href="${o.fillUrl}">Fill it in here</a>.</p>
+</div>`;
+  return layout({
+    title: `Fill with Claude · ${o.form.title}`,
+    body,
+    host: o.host,
+    noindex: true,
+    scripts: [`/assets/copy.js?v=${COPY_JS_VERSION}`],
+  });
 }
 
 export const thanksPage = (host: string, form: StoredForm) =>

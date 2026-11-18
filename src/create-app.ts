@@ -10,6 +10,7 @@ import { formRoutes } from "./routes/form.js";
 import { reviewRoutes } from "./routes/review.js";
 import type { Relay } from "./service.js";
 import { errorPage, homePage, notFoundPage } from "./views/pages.js";
+import { COPY_JS } from "./views/scripts.js";
 import { CSS, FAVICON_SVG } from "./views/styles.js";
 
 const CSP = [
@@ -21,6 +22,8 @@ const CSP = [
   "base-uri 'none'",
   "frame-ancestors 'none'",
 ].join("; ");
+// /c/:id loads one same-origin script (the copy button). Every other page runs no script at all.
+const CSP_WITH_SCRIPT = `${CSP}; script-src 'self'`;
 
 export function createApp(relay: Relay, config: Config) {
   const deps: Deps = { relay, config };
@@ -37,14 +40,14 @@ export function createApp(relay: Relay, config: Config) {
 
   app.use(async (c, next) => {
     await next();
-    c.header("Content-Security-Policy", CSP);
+    c.header("Content-Security-Policy", c.req.path.startsWith("/c/") ? CSP_WITH_SCRIPT : CSP);
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Content-Type-Options", "nosniff");
     c.header("X-Frame-Options", "DENY");
     c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
     c.header("Cross-Origin-Opener-Policy", "same-origin");
     if (config.baseUrl.startsWith("https://")) c.header("Strict-Transport-Security", "max-age=31536000");
-    if (c.req.path.startsWith("/f/") || c.req.path.startsWith("/api/")) c.header("Cache-Control", "no-store");
+    if (/^\/(f|a|c|api)\//.test(c.req.path)) c.header("Cache-Control", "no-store");
   });
 
   app.get("/", (c) => c.html(homePage({ host: relay.host, baseUrl: relay.baseUrl })));
@@ -52,6 +55,10 @@ export function createApp(relay: Relay, config: Config) {
   app.get("/assets/relay.css", (c) => {
     c.header("Cache-Control", "public, max-age=3600");
     return c.body(CSS, 200, { "Content-Type": "text/css; charset=utf-8" });
+  });
+  app.get("/assets/copy.js", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.body(COPY_JS, 200, { "Content-Type": "text/javascript; charset=utf-8" });
   });
   app.get("/favicon.svg", (c) => c.body(FAVICON_SVG, 200, { "Content-Type": "image/svg+xml" }));
   // Form pages must stay fetchable: "fill with Claude" has Claude read /a/:id (or the older /f/:id/clean), and Claude's

@@ -130,13 +130,13 @@ No tool sends, emails or deletes anything. Responses come back inside a labelled
 
 **Browser:** `/f/:id` → fill in → Submit → thank-you page.
 
-**Plain Claude:** `/c/:id` opens a new Claude chat with a short prefilled message pointing at `/f/:id/clean`. Claude reads the plain-text form, asks the questions, and hands back a review link (`/f/:id/review?q1=…&q2=…`). The person checks the answers on the review page and presses Submit. A GET never saves anything.
+**Plain Claude:** `/c/:id` opens a new Claude chat (`claude.ai/new?q=…`) with the whole form already in the message — questions, options and the review-link template. The respondent presses Send. Nothing needs fetching, which matters because Claude will not fetch a link from a prefilled message. Claude asks the questions and hands back a review link (`/f/:id/review?q1=…&q2=…`); the person checks the answers and presses Submit. A GET never saves anything. Forms too long for a link (over 8,000 characters) get a copy-and-paste page instead, pointing Claude at `/a/:id`.
 
 Both paths end at the same validated `POST /f/:id/submit`.
 
 ## HTTP routes
 
-Public: `GET /f/:id` · `POST /f/:id/submit` · `GET /f/:id/clean` · `GET /f/:id/review` · `GET /c/:id`
+Public: `GET /f/:id` · `POST /f/:id/submit` · `GET /a/:id` (also `/f/:id/clean`) · `GET /f/:id/review` · `GET /c/:id`
 
 Creator API (Bearer key): `POST /api/forms` · `GET /api/forms` · `GET /api/forms/:id` · `GET /api/forms/:id/responses?limit=&cursor=` · `GET /api/forms/:id/summary` · `POST /api/forms/:id/close` · `DELETE /api/forms/:id`
 

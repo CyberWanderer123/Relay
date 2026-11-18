@@ -250,6 +250,14 @@ legend.q-head + * { clear: both; }
 .btn-ink { background: var(--ink); color: #fff; }
 .btn-ink:hover { background: #262938; color: #fff; }
 
+/* ---------- fill with Claude ---------- */
+.handoff .q-meta { margin: 0 0 10px; }
+.handoff .q-label { display: block; margin: 0 0 12px; }
+.textarea.message { min-height: 0; resize: none; field-sizing: content; font: 400 14px/1.6 var(--mono); color: var(--text-2); }
+.copy-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 14px; }
+.copy-row + .fine { margin-top: 12px; }
+#copy-status:empty { display: none; }
+
 /* ---------- notices ---------- */
 .notice {
   display: flex; gap: 14px; align-items: flex-start;

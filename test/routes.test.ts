@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PREFILL_URL } from "../src/routes/claude.js";
 import { auth, countResponses, firstAnswers, form, sampleForm, setup } from "./helpers.js";
 
 async function withForm(overrides = {}, def: object = sampleForm) {
@@ -222,16 +223,39 @@ describe("review link", () => {
   });
 });
 
-describe("Claude redirect", () => {
-  it("redirects to a new Claude chat with a short prefilled message", async () => {
+describe("Fill with Claude link", () => {
+  it("opens a new Claude chat with the whole form in the message", async () => {
     const { app, id } = await withForm();
     const res = await app.request(`/c/${id}`);
     expect(res.status).toBe(302);
     const loc = new URL(res.headers.get("location")!);
-    expect(loc.origin).toBe("https://claude.ai");
+    expect(loc.origin + loc.pathname).toBe("https://claude.ai/new");
     const q = loc.searchParams.get("q")!;
-    expect(q).toContain(`https://relay.test/a/${id}`);
-    expect(q.length).toBeLessThan(300);
+    expect(q).toContain(`https://relay.test/f/${id}/review?q1=<answer 1>`);
+    expect(q).toContain("How was the workshop?");
+    expect(res.headers.get("location")!.length).toBeLessThanOrEqual(MAX_PREFILL_URL);
+  });
+
+  it("falls back to a copy-and-paste page when the form is too long for a link", async () => {
+    const options = Array.from({ length: 50 }, (_, i) => `A fairly long answer option number ${i + 1} for this question`);
+    const fields = Array.from({ length: 6 }, (_, i) => ({ id: `q${i + 1}`, type: "single_choice", label: `Question ${i + 1}`, options }));
+    const { app, id } = await withForm({}, { title: "Long", fields });
+    const page = await app.request(`/c/${id}`);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    const message = /<textarea[^>]*id="relay-message"[^>]*>([^<]*)<\/textarea>/.exec(html)![1]!;
+    expect(message).toContain(`https://relay.test/a/${id}`);
+    expect(html).toContain('href="https://claude.ai/new"');
+    expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
+    const src = /<script src="([^"]+)" defer><\/script>/.exec(html)![1]!;
+    expect((await app.request(src)).status).toBe(200);
+  });
+
+  it("no other page runs scripts", async () => {
+    const { app, id } = await withForm();
+    const res = await app.request(`/f/${id}`);
+    expect(res.headers.get("content-security-policy")).not.toContain("script-src");
+    expect(await res.text()).not.toContain("<script");
   });
 });
 

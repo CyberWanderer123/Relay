@@ -44,6 +44,8 @@ export interface LayoutOptions {
   /** Respondent pages are private links — keep them out of search engines. */
   noindex?: boolean;
   topbarMeta?: Safe | string;
+  /** Same-origin script paths. Only pages whose CSP allows script-src 'self' may pass these. */
+  scripts?: string[];
 }
 
 export function layout(o: LayoutOptions): string {
@@ -62,6 +64,7 @@ ${o.noindex ? h`<meta name="robots" content="noindex, nofollow">` : ""}
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${FONT_CSS_URL}">
 <link rel="stylesheet" href="/assets/relay.css?v=${CSS_VERSION}">
+${(o.scripts ?? []).map((src) => h`<script src="${src}" defer></script>`)}
 </head>
 <body>
 <header class="topbar">

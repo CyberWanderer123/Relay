@@ -63,3 +63,44 @@ export function renderClosedClean(): string {
     "",
   ].join("\n");
 }
+
+/**
+ * The message a new Claude chat opens with on /c/:id. It carries the whole form, because
+ * claude.ai will not fetch a link from a prefilled message — so nothing here needs fetching.
+ * It is written in the respondent's voice: they see it in the message box and send it themselves.
+ * The creator's words are cleaned and capped the same way as in renderClean.
+ */
+export function renderChatPrompt(form: StoredForm, links: FormLinks): string {
+  const kind: Record<Field["type"], string> = {
+    short_text: "",
+    long_text: "a few sentences",
+    single_choice: "pick one",
+    multi_choice: "pick any",
+    number: "a number",
+    email: "an email address",
+  };
+  const questions = form.fields.flatMap((f, i) => {
+    const notes = [kind[f.type], f.required ? "required" : "optional"].filter(Boolean).join(", ");
+    const line = `${i + 1}. ${one(f.label, 300)} (${notes})`;
+    return f.options?.length ? [line, `   Options: ${f.options.map((o) => one(o, 200)).join("; ")}`] : [line];
+  });
+  const params = form.fields
+    .map((f, i) =>
+      f.type === "multi_choice" ? `${f.id}=<a choice for ${i + 1}>&${f.id}=<another choice for ${i + 1}>` : `${f.id}=<answer ${i + 1}>`,
+    )
+    .join("&");
+
+  const lines = [`Hi Claude! Please help me fill in this form: "${one(form.title, 200)}".`];
+  if (form.description) lines.push(one(form.description.replace(/\s+/g, " "), 300));
+  lines.push(
+    "",
+    "Ask me these questions one at a time, and use only what I tell you:",
+    "",
+    ...questions,
+    "",
+    "When we're done, give me this link with my answers filled in (each one URL-encoded), so I can check them and press Submit myself:",
+    `${links.review}?${params}`,
+    `Leave out questions I skip. Choices must match an option exactly. If the link would be over about ${MAX_LINK.toLocaleString("en-US")} characters, give me my answers as text to paste into ${links.fill} instead.`,
+  );
+  return lines.join("\n");
+}
