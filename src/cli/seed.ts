@@ -29,8 +29,8 @@ const created = await relay.createForm(
 );
 
 console.log(`Created form ${created.id}\n`);
-console.log(`Fill:   ${created.links.fill}`);
-console.log(`Claude: ${created.links.claude}`);
-console.log(`Clean:  ${config.baseUrl}/a/${created.id}\n`);
+console.log(`fill    ${created.links.fill}`);
+for (const [name, url] of Object.entries(created.links.assistants)) console.log(`${name.padEnd(7)} ${url}`);
+console.log(`agent   ${config.baseUrl}/a/${created.id}\n`);
 console.log("Share message:\n");
 console.log(created.share_message);

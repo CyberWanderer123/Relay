@@ -30,8 +30,8 @@ describe("creator API", () => {
     expect(status).toBe(201);
     expect(id).toMatch(/^[a-z0-9]{14}$/);
     expect(created.links.fill).toBe(`https://relay.test/f/${id}`);
-    expect(created.share_message).toContain(`Quick form: https://relay.test/f/${id}`);
-    expect(created.share_message).toContain(`Or fill it with Claude: https://relay.test/c/${id}`);
+    expect(created.share_message).toContain(`Form: https://relay.test/f/${id}`);
+    expect(created.share_message).not.toContain("/c/");
   });
 
   it("rejects invalid definitions with details", async () => {
@@ -251,9 +251,19 @@ describe("Fill with Claude link", () => {
     expect((await app.request(src)).status).toBe(200);
   });
 
-  it("no other page runs scripts", async () => {
+  it("opens ChatGPT the same way, and rejects unknown assistants", async () => {
     const { app, id } = await withForm();
-    const res = await app.request(`/f/${id}`);
+    const res = await app.request(`/c/${id}/chatgpt`);
+    expect(res.status).toBe(302);
+    const loc = new URL(res.headers.get("location")!);
+    expect(loc.origin + loc.pathname).toBe("https://chatgpt.com/");
+    expect(loc.searchParams.get("q")).toContain("How was the workshop?");
+    expect((await app.request(`/c/${id}/claude`)).headers.get("location")).toMatch(/^https:\/\/claude\.ai\/new\?q=/);
+    expect((await app.request(`/c/${id}/evilbot`)).status).toBe(404);
+  });
+
+  it("pages outside the form flow run no scripts", async () => {
+    const res = await setup().app.request("/");
     expect(res.headers.get("content-security-policy")).not.toContain("script-src");
     expect(await res.text()).not.toContain("<script");
   });
@@ -296,5 +306,108 @@ describe("review link template", () => {
     expect(page).toContain("Great");
     expect(page).toContain("Lab");
     expect(page).toContain(">7<");
+  });
+});
+
+describe("one link, any assistant", () => {
+  it("form page offers Claude, ChatGPT and a copyable message for any other assistant", async () => {
+    const { app, id } = await withForm();
+    const res = await app.request(`/f/${id}`);
+    const html = await res.text();
+    expect(html).toContain(`href="/c/${id}/claude"`);
+    expect(html).toContain(`href="/c/${id}/chatgpt"`);
+    expect(html).toContain("Other assistant");
+    expect(/<textarea[^>]*id="relay-message"[^>]*>([^<]*)<\/textarea>/.exec(html)![1]).toContain("How was the workshop?");
+    expect(res.headers.get("content-security-policy")).toContain("script-src 'self'");
+  });
+
+  it("tells agents where the plain-text version is", async () => {
+    const { app, id } = await withForm();
+    const html = await (await app.request(`/f/${id}`)).text();
+    expect(html).toContain(`<link rel="alternate" type="text/plain" href="https://relay.test/a/${id}"`);
+    expect(html).toContain(`For AI assistants: a plain-text version of this form`);
+  });
+
+  it("serves the agent version on the form link to clients that ask for text", async () => {
+    const { app, id } = await withForm();
+    for (const accept of ["text/plain", "text/markdown", "text/markdown, text/html;q=0.5"]) {
+      const res = await app.request(`/f/${id}`, { headers: { Accept: accept } });
+      expect(res.headers.get("content-type")).toContain("text/plain");
+      expect(await res.text()).toMatch(/^RELAY FORM · agent-forms\/1 · spec: https:\/\/relay\.test\/spec/);
+      expect(res.headers.get("vary")).toContain("Accept");
+    }
+    const browser = await app.request(`/f/${id}`, { headers: { Accept: "text/html,application/xhtml+xml,*/*;q=0.8" } });
+    expect(browser.headers.get("content-type")).toContain("text/html");
+  });
+});
+
+describe("agent-forms spec", () => {
+  it("is served at /spec and matches docs/agent-forms.md", async () => {
+    const { readFileSync } = await import("node:fs");
+    const doc = readFileSync(new URL("../docs/agent-forms.md", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const res = await setup().app.request("/spec");
+    expect(res.headers.get("content-type")).toContain("text/markdown");
+    expect(await res.text()).toBe(doc);
+  });
+});
+
+describe("editing a form", () => {
+  const put = (app: Awaited<ReturnType<typeof withForm>>["app"], id: string, body: unknown) =>
+    app.request(`/api/forms/${id}`, { method: "PUT", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  it("rewords, adds and removes questions, keeping the link and old answers", async () => {
+    const { app, id } = await withForm();
+    await app.request(`/f/${id}/submit`, form({ q1: "Great", q3: "8", q4: "More labs" }));
+    const res = await put(app, id, {
+      title: "Workshop feedback",
+      fields: [
+        { id: "q1", type: "single_choice", label: "How was it overall?", required: true, options: ["Great", "Okay", "Poor", "Amazing"] },
+        { id: "q3", type: "number", label: "Score 0–10", required: true },
+        { type: "short_text", label: "Your role" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { changes: string[]; fields: { id: string }[] };
+    expect(body.changes).toContain('Edited "How was it overall?" (q1): wording, options.');
+    expect(body.changes).toContain('Removed "What should we improve?" (q4). Its 1 past answer is kept in get_responses.');
+    // The new question must not reuse q2, q4 or q5: those ids belonged to removed questions.
+    expect(body.fields.map((f) => f.id)).toEqual(["q1", "q3", "q6"]);
+    expect(await (await app.request(`/f/${id}`)).text()).toContain("How was it overall?");
+    const responses = (await (await app.request(`/api/forms/${id}/responses`, { headers: auth })).json()) as { responses: { answers: Record<string, unknown> }[] };
+    expect(responses.responses[0]!.answers.q4).toBe("More labs");
+  });
+
+  it("refuses a type change once people have answered, and saves nothing", async () => {
+    const { app, id } = await withForm();
+    await app.request(`/f/${id}/submit`, form({ q1: "Great", q3: "8" }));
+    const res = await put(app, id, { title: "Changed", fields: [{ id: "q3", type: "short_text", label: "Score" }] });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { details: string[] };
+    expect(body.details[0]).toContain("can't change the type from number to short_text");
+    expect(await (await app.request(`/f/${id}`)).text()).toContain("Workshop feedback");
+  });
+
+  it("allows a type change before anyone has answered", async () => {
+    const { app, id } = await withForm();
+    const res = await put(app, id, { title: "Workshop feedback", fields: [{ id: "q3", type: "short_text", label: "Score" }] });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("new since last check", () => {
+  it("counts unseen responses per form and clears them once read", async () => {
+    const { app, id } = await withForm();
+    const list = async () => ((await (await app.request("/api/forms", { headers: auth })).json()) as { forms: { new_responses: number }[] }).forms[0]!.new_responses;
+    expect(await list()).toBe(0);
+    for (const q1 of ["Great", "Okay", "Poor"]) await app.request(`/f/${id}/submit`, form({ q1, q3: "5" }));
+    expect(await list()).toBe(3);
+
+    const page = (await (await app.request(`/api/forms/${id}/responses?only_new=1&limit=2`, { headers: auth })).json()) as { responses: { answers: { q1: string } }[]; remaining_new: number };
+    expect(page.responses.map((r) => r.answers.q1)).toEqual(["Great", "Okay"]);
+    expect(page.remaining_new).toBe(1);
+    expect(await list()).toBe(1);
+
+    await app.request(`/api/forms/${id}/responses`, { headers: auth });
+    expect(await list()).toBe(0);
   });
 });

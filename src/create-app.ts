@@ -5,25 +5,36 @@ import { mcpRoutes } from "./mcp/http.js";
 import { apiRoutes } from "./routes/api.js";
 import { claudeRoutes } from "./routes/claude.js";
 import { cleanRoutes } from "./routes/clean.js";
-import type { Deps } from "./routes/deps.js";
+import { exportRoutes } from "./routes/export.js";
+import { FRAME_ANCESTORS_HEADER, type Deps } from "./routes/deps.js";
 import { formRoutes } from "./routes/form.js";
 import { reviewRoutes } from "./routes/review.js";
 import type { Relay } from "./service.js";
 import { errorPage, homePage, notFoundPage } from "./views/pages.js";
-import { COPY_JS } from "./views/scripts.js";
+import { SPEC_MD } from "./spec.js";
+import { PAGE_JS } from "./views/scripts.js";
+import { themeCss } from "./views/theme.js";
 import { CSS, FAVICON_SVG } from "./views/styles.js";
 
-const CSP = [
-  "default-src 'none'",
-  "style-src 'self' https://fonts.googleapis.com",
-  "font-src https://fonts.gstatic.com",
-  "img-src 'self' data:",
-  "form-action 'self'",
-  "base-uri 'none'",
-  "frame-ancestors 'none'",
-].join("; ");
-// /c/:id loads one same-origin script (the copy button). Every other page runs no script at all.
-const CSP_WITH_SCRIPT = `${CSP}; script-src 'self'`;
+/**
+ * Content-Security-Policy. Images may come from any https host (a form's own logo). Form pages and
+ * /c/ fallback pages load one same-origin script; there are no inline scripts anywhere. Framing is
+ * refused unless a form lists the sites allowed to embed it.
+ */
+function csp(o: { script: boolean; frameAncestors?: string }) {
+  return [
+    "default-src 'none'",
+    "style-src 'self' https://fonts.googleapis.com",
+    "font-src https://fonts.gstatic.com",
+    "img-src 'self' data: https:",
+    "form-action 'self'",
+    "base-uri 'none'",
+    `frame-ancestors ${o.frameAncestors ?? "'none'"}`,
+    ...(o.script ? ["script-src 'self'"] : []),
+  ].join("; ");
+}
+
+
 
 export function createApp(relay: Relay, config: Config) {
   const deps: Deps = { relay, config };
@@ -40,36 +51,50 @@ export function createApp(relay: Relay, config: Config) {
 
   app.use(async (c, next) => {
     await next();
-    c.header("Content-Security-Policy", c.req.path.startsWith("/c/") ? CSP_WITH_SCRIPT : CSP);
+    const frameAncestors = c.res.headers.get(FRAME_ANCESTORS_HEADER) || undefined;
+    c.res.headers.delete(FRAME_ANCESTORS_HEADER);
+    c.header("Content-Security-Policy", csp({ script: /^\/(c|f)\//.test(c.req.path), frameAncestors }));
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("X-Frame-Options", "DENY");
+    // Old browsers ignore frame-ancestors; X-Frame-Options can't list several sites, so send it only when framing is refused.
+    if (!frameAncestors) c.header("X-Frame-Options", "DENY");
     c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
     c.header("Cross-Origin-Opener-Policy", "same-origin");
     if (config.baseUrl.startsWith("https://")) c.header("Strict-Transport-Security", "max-age=31536000");
-    if (/^\/(f|a|c|api)\//.test(c.req.path)) c.header("Cache-Control", "no-store");
+    if (/^\/(f|a|c|api)\//.test(c.req.path) && !c.req.path.endsWith("/theme.css")) c.header("Cache-Control", "no-store");
   });
 
   app.get("/", (c) => c.html(homePage({ host: relay.host, baseUrl: relay.baseUrl })));
   app.get("/healthz", (c) => c.json({ ok: true }));
+  // A form's brand colour as CSS variables. A stylesheet, not inline styles, so the CSP stays strict.
+  app.get("/f/:id/theme.css", async (c) => {
+    const form = await relay.findForm(c.req.param("id"));
+    const css = form ? themeCss(form.settings) : "";
+    return c.body(css, 200, { "Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=300" });
+  });
   app.get("/assets/relay.css", (c) => {
     c.header("Cache-Control", "public, max-age=3600");
     return c.body(CSS, 200, { "Content-Type": "text/css; charset=utf-8" });
   });
-  app.get("/assets/copy.js", (c) => {
+  app.get("/assets/relay.js", (c) => {
     c.header("Cache-Control", "public, max-age=3600");
-    return c.body(COPY_JS, 200, { "Content-Type": "text/javascript; charset=utf-8" });
+    return c.body(PAGE_JS, 200, { "Content-Type": "text/javascript; charset=utf-8" });
+  });
+  app.get("/spec", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.body(SPEC_MD, 200, { "Content-Type": "text/markdown; charset=utf-8" });
   });
   app.get("/favicon.svg", (c) => c.body(FAVICON_SVG, 200, { "Content-Type": "image/svg+xml" }));
   // Form pages must stay fetchable: "fill with Claude" has Claude read /a/:id (or the older /f/:id/clean), and Claude's
   // fetcher obeys robots.txt. Search engines are kept out by noindex headers/meta, not by this file.
-  app.get("/robots.txt", (c) => c.text("User-agent: *\nAllow: /a/\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\n"));
+  app.get("/robots.txt", (c) => c.text("User-agent: *\nAllow: /a/\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\nDisallow: /x/\n"));
 
   app.route("/", formRoutes(deps));
   app.route("/", cleanRoutes(deps));
   app.route("/", reviewRoutes(deps));
   app.route("/", claudeRoutes(deps));
   app.route("/", apiRoutes(deps));
+  app.route("/", exportRoutes(deps));
   app.route("/", mcpRoutes(deps));
 
   app.notFound((c) =>

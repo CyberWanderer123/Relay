@@ -1,4 +1,5 @@
 import { RelayError } from "../errors.js";
+import { makeExportLink } from "../routes/export.js";
 import type { Relay, ShareOptions } from "../service.js";
 
 /* The MCP tools add no logic of their own: they call one of these backends,
@@ -9,20 +10,27 @@ export interface Backend {
   createForm(input: unknown, share: ShareOptions): Result<"createForm">;
   listForms(): Result<"listForms">;
   getForm(id: string, share: ShareOptions): Result<"getForm">;
-  getResponses(id: string, limit?: number, cursor?: string): Result<"getResponses">;
+  updateForm(id: string, input: unknown): Result<"updateForm">;
+  getResponses(id: string, opts: { limit?: number; cursor?: string; onlyNew?: boolean }): Result<"getResponses">;
   summarize(id: string): Result<"summarize">;
   closeForm(id: string): Result<"closeForm">;
+  exportLink(id: string): Promise<{ url: string; expires_at: string; filename: string; response_count: number }>;
 }
 
 /** Calls the service in-process — used by /mcp and by stdio when it owns the database. */
-export function localBackend(relay: Relay): Backend {
+export function localBackend(relay: Relay, ownerKey?: string): Backend {
   return {
     createForm: (input, share) => relay.createForm(input, share),
     listForms: () => relay.listForms(),
     getForm: (id, share) => relay.getForm(id, share),
-    getResponses: (id, limit, cursor) => relay.getResponses(id, { limit, cursor }),
+    updateForm: (id, input) => relay.updateForm(id, input),
+    getResponses: (id, opts) => relay.getResponses(id, opts),
     summarize: (id) => relay.summarize(id),
     closeForm: (id) => relay.closeForm(id),
+    exportLink: async (id) => {
+      const out = await relay.exportResponses(id);
+      return { ...makeExportLink(relay.baseUrl, ownerKey, id), filename: out.filename, response_count: out.count };
+    },
   };
 }
 
@@ -63,8 +71,11 @@ export function httpBackend(baseUrl: string, ownerKey: string): Backend {
     createForm: (input, share) => call("POST", "/api/forms", { ...(input as object), ...share }),
     listForms: () => call("GET", "/api/forms"),
     getForm: (id, share) => call("GET", `/api/forms/${enc(id)}${qs({ channel: share.channel, intro: share.intro })}`),
-    getResponses: (id, limit, cursor) => call("GET", `/api/forms/${enc(id)}/responses${qs({ limit, cursor })}`),
+    updateForm: (id, input) => call("PUT", `/api/forms/${enc(id)}`, input),
+    getResponses: (id, { limit, cursor, onlyNew }) =>
+      call("GET", `/api/forms/${enc(id)}/responses${qs({ limit, cursor, only_new: onlyNew ? 1 : undefined })}`),
     summarize: (id) => call("GET", `/api/forms/${enc(id)}/summary`),
     closeForm: (id) => call("POST", `/api/forms/${enc(id)}/close`),
+    exportLink: (id) => call("POST", `/api/forms/${enc(id)}/export-link`),
   };
 }

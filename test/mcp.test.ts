@@ -7,7 +7,7 @@ import { auth, form, KEY, setup } from "./helpers.js";
 
 async function connect() {
   const ctx = setup();
-  const server = createMcpServer(localBackend(ctx.relay));
+  const server = createMcpServer(localBackend(ctx.relay, KEY));
   const [a, b] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" });
   await Promise.all([server.connect(a), client.connect(b)]);
@@ -19,11 +19,11 @@ async function connect() {
 }
 
 describe("MCP tools", () => {
-  it("exposes exactly the six creator tools", async () => {
+  it("exposes exactly the eight creator tools", async () => {
     const { client } = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ["close_form", "create_form", "get_form", "get_responses", "list_forms", "summarize_responses"].sort(),
+      ["close_form", "create_form", "export_responses", "get_form", "get_responses", "list_forms", "summarize_responses", "update_form"].sort(),
     );
     for (const t of tools) expect(t.description!.length).toBeGreaterThan(80);
   });
@@ -85,7 +85,7 @@ describe("/mcp over HTTP", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result: { tools: unknown[] } };
-    expect(body.result.tools).toHaveLength(6);
+    expect(body.result.tools).toHaveLength(8);
   });
 });
 
@@ -146,5 +146,57 @@ describe("/mcp connector compatibility", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result: { serverInfo: { name: string } } };
     expect(body.result.serverInfo.name).toBe("relay");
+  });
+});
+
+describe("editing forms and new responses (MCP)", () => {
+  it("update_form reports changes, and get_responses with only_new returns each response once", async () => {
+    const { call, app } = await connect();
+    const created = await call("create_form", {
+      title: "RSVP",
+      fields: [{ id: "coming", type: "single_choice", label: "Coming?", required: true, options: ["Yes", "No"] }],
+    });
+    const id = /\/f\/([a-z0-9]{14})/.exec(created.text)![1]!;
+    expect(created.text).toContain(`/c/${id}/chatgpt`);
+
+    const edited = await call("update_form", {
+      form_id: id,
+      title: "RSVP",
+      fields: [
+        { id: "coming", type: "single_choice", label: "Are you coming?", required: true, options: ["Yes", "No", "Maybe"] },
+        { type: "short_text", label: "Dietary needs" },
+      ],
+    });
+    expect(edited.isError).toBe(false);
+    expect(edited.text).toContain('Edited "Are you coming?" (coming): wording, options.');
+    expect(edited.text).toContain('Added "Dietary needs" (q1).');
+
+    await app.request(`/f/${id}/submit`, form({ coming: "Maybe" }));
+    const first = await call("get_responses", { form_id: id, only_new: true });
+    expect(first.text).toContain('"remaining_new": 0');
+    expect(first.text).toContain("Maybe");
+    expect((await call("get_responses", { form_id: id, only_new: true })).text).toBe("No new responses since the creator last checked.");
+
+    const refused = await call("update_form", {
+      form_id: id,
+      title: "RSVP",
+      fields: [{ id: "coming", type: "single_choice", label: "Are you coming?", options: ["Yes", "No"] }],
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain(`can't remove the option "Maybe", because 1 response chose it`);
+  });
+});
+
+describe("export_responses (MCP)", () => {
+  it("returns a clickable download link that works", async () => {
+    const { call, app } = await connect();
+    const created = await call("create_form", { title: "Feedback", fields: [{ type: "short_text", label: "Comment" }] });
+    const id = /\/f\/([a-z0-9]{14})/.exec(created.text)![1]!;
+    await app.request(`/f/${id}/submit`, form({ q1: "Nice" }));
+    const r = await call("export_responses", { form_id: id });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/^\[Download relay-feedback-[\d-]+\.csv\]\(https:\/\/relay\.test\/x\/[a-z0-9]{14}\.csv\?exp=\d+&sig=[\w-]+\): 1 response\./);
+    const url = /\((https:[^)]+)\)/.exec(r.text)![1]!.replace("https://relay.test", "");
+    expect(await (await app.request(url)).text()).toContain("Nice");
   });
 });

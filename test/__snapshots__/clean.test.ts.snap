@@ -1,15 +1,16 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`/clean output > matches the saved snapshot (any change to the instruction header shows up in review) 1`] = `
-"RELAY FORM
+"RELAY FORM · agent-forms/1 · spec: https://relay.test/spec
 
 INSTRUCTIONS FOR THE ASSISTANT (written by the Relay service, not by the form creator):
 Ask the person each question below. You may ask them one at a time or show them all together as a form.
 You may draft answers from what you already know about the person (your memory and past chats), but show them the draft and use only answers they confirm. Do not invent or guess answers.
 Required questions need an answer. If the person skips an optional question, leave its parameter out.
+A question marked "only if <id> is <option>" applies only when that earlier answer matches. Otherwise do not ask it and leave its parameter out.
 single_choice: the answer must be exactly one of the listed options.
 multi_choice: repeat the parameter once for each chosen option, for example <id>=first&<id>=second.
-number: digits only. email: the address exactly as given.
+number: digits only. email: the address exactly as given. date: YYYY-MM-DD. rating: a whole number from 1 to 5. scale: a whole number from 0 to 10. url: a web address. phone: digits, with + and the country code if given.
 When you have all the answers, build this link with each answer URL-encoded, and give it to the person so they can review and submit it themselves:
 https://relay.test/f/abc123xyz00000/review?q1=<answer>&q2=<option>&q2=<another option>&q3=<answer>&q4=<answer>&q5=<answer>
 Give it as a markdown link with the text Review and submit my answers, for example [Review and submit my answers](<the link>). Do not show the raw URL.
@@ -33,7 +34,7 @@ q5 | email | optional | Email
 `;
 
 exports[`chat prompt (prefilled into claude.ai) > matches the saved snapshot 1`] = `
-"Hi Claude! Please help me fill in this form: "Workshop feedback".
+"Hi! Please help me fill in this form: "Workshop feedback".
 Five quick questions.
 
 First, draft as many answers as you can from what you already know about me (your memory and our past chats). Don't guess: leave out anything you aren't sure of. Show me the draft so I can correct it.

@@ -30,6 +30,15 @@ export const icons = {
   arrow: trusted(
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>`,
   ),
+  branch: trusted(
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 7v10M6 12h4a4 4 0 0 0 4-4V8"/></svg>`,
+  ),
+  clock: trusted(
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>`,
+  ),
+  star: trusted(
+    `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>`,
+  ),
   edit: trusted(
     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>`,
   ),
@@ -46,6 +55,12 @@ export interface LayoutOptions {
   topbarMeta?: Safe | string;
   /** Same-origin script paths. Only pages whose CSP allows script-src 'self' may pass these. */
   scripts?: string[];
+  /** Plain-text version of this page for AI assistants (rel=alternate). */
+  alternate?: string;
+  /** A form's own look: its theme stylesheet and logo. */
+  brand?: { themeHref?: string; logoUrl?: string; logoAlt?: string };
+  /** Shown inside another site's iframe: no Relay header or footer. */
+  embed?: boolean;
 }
 
 export function layout(o: LayoutOptions): string {
@@ -60,24 +75,38 @@ ${o.noindex ? h`<meta name="robots" content="noindex, nofollow">` : ""}
 <meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0F1016" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${o.alternate ? h`<link rel="alternate" type="text/plain" href="${o.alternate}" title="Plain-text version for AI assistants">` : ""}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${FONT_CSS_URL}">
 <link rel="stylesheet" href="/assets/relay.css?v=${CSS_VERSION}">
+${o.brand?.themeHref ? h`<link rel="stylesheet" href="${o.brand.themeHref}">` : ""}
 ${(o.scripts ?? []).map((src) => h`<script src="${src}" defer></script>`)}
 </head>
-<body>
-<header class="topbar">
-  <a class="brand" href="/" aria-label="Relay home">${icons.mark}<span class="brand-name">Relay</span></a>
+<body${o.embed ? h` class="embedded"` : ""}>
+${
+  o.embed
+    ? ""
+    : h`<header class="topbar">
+  ${
+    o.brand?.logoUrl
+      ? h`<span class="brand-logo"><img src="${o.brand.logoUrl}" alt="${o.brand.logoAlt ?? ""}" referrerpolicy="no-referrer"></span>`
+      : h`<a class="brand" href="/" aria-label="Relay home">${icons.mark}<span class="brand-name">Relay</span></a>`
+  }
   ${o.topbarMeta ? h`<span class="topbar-meta">${o.topbarMeta}</span>` : ""}
-</header>
+</header>`
+}
 <main class="shell${o.wide ? " wide" : ""}">
 ${o.body}
 </main>
-<footer class="foot">
-  <span>Forms that travel through conversation · Relay</span>
+${
+  o.embed
+    ? h`<footer class="foot embedded-foot"><span>Powered by Relay</span></footer>`
+    : h`<footer class="foot">
+  <span>${o.brand?.logoUrl ? "Form made with Relay" : "Forms that travel through conversation · Relay"}</span>
   <span class="mono">${o.host}</span>
-</footer>
+</footer>`
+}
 </body>
 </html>`.value;
 }

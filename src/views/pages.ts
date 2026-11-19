@@ -1,14 +1,32 @@
 import type { Field } from "../schema.js";
-import { LIMITS } from "../schema.js";
+import { LIMITS, parseDate, RANGES, visibleFieldIds } from "../schema.js";
 import type { FormLinks, StoredForm } from "../service.js";
 import { h, type Safe } from "./html.js";
 import { icons, layout } from "./layout.js";
-import { COPY_JS_VERSION } from "./scripts.js";
+import { PAGE_JS_VERSION } from "./scripts.js";
+import { themeCss, themeVersion } from "./theme.js";
+import { ASSISTANTS, type Assistant } from "../assistants.js";
+import { renderChatPrompt } from "../clean.js";
 
 export type Values = Record<string, string[]>;
 export type Errors = Record<string, string>;
 
 const num = (i: number) => String(i + 1).padStart(2, "0");
+
+/** A form's own look (theme stylesheet, logo) and whether it is shown inside an iframe. */
+export function look(form: StoredForm, embed = false) {
+  const css = themeCss(form.settings);
+  const logo = form.settings.brand?.logo_url;
+  return {
+    brand: {
+      ...(css && { themeHref: `/f/${form.id}/theme.css?v=${themeVersion(css)}` }),
+      ...(logo && { logoUrl: logo, logoAlt: form.title }),
+    },
+    embed,
+  };
+}
+const embedQs = (embed?: boolean) => (embed ? "?embed=1" : "");
+const newTab = (embed?: boolean) => (embed ? h` target="_blank"` : "");
 
 function minutes(fields: Field[]): string {
   const secs = fields.reduce((t, f) => t + (f.type === "long_text" ? 45 : 12), 0);
@@ -25,15 +43,26 @@ function errorLine(f: Field, err?: string): Safe | string {
   return err ? h`<p class="q-error" id="err-${f.id}" role="alert">${err}</p>` : "";
 }
 
-function fieldBlock(f: Field, i: number, values: string[], err?: string): Safe {
+/** data-show-* attributes for the page script, and the "Only if…" note shown without it. */
+function condition(f: Field, fields: Field[]): { attrs: Safe | string; note: Safe | string } {
+  if (!f.show_if) return { attrs: "", note: "" };
+  const target = fields.find((t) => t.id === f.show_if!.field);
+  const attrs = h` data-show-field="${f.show_if.field}" data-show-any="${JSON.stringify(f.show_if.any_of)}"`;
+  const note = h`<p class="q-cond">${icons.branch}Only if “${target?.label ?? f.show_if.field}” is ${f.show_if.any_of.join(" or ")}</p>`;
+  return { attrs, note };
+}
+
+function fieldBlock(f: Field, i: number, values: string[], err: string | undefined, fields: Field[]): Safe {
   const cls = `q${err ? " has-error" : ""}`;
+  const cond = condition(f, fields);
   const v = values[0] ?? "";
   const describedBy = err ? `err-${f.id}` : "";
   const required = f.required ? "required" : "";
 
   if (f.type === "single_choice" || f.type === "multi_choice") {
     const multi = f.type === "multi_choice";
-    return h`<fieldset class="${cls}" id="q-${f.id}"${describedBy ? h` aria-describedby="${describedBy}"` : ""}>
+    return h`<fieldset class="${cls}" id="q-${f.id}"${cond.attrs}${describedBy ? h` aria-describedby="${describedBy}"` : ""}>
+  ${cond.note}
   <legend class="q-head">${meta(f, i, multi ? "Choose any" : "Choose one")}<span class="q-label">${f.label}</span></legend>
   <div class="options">
     ${(f.options ?? []).map(
@@ -42,6 +71,25 @@ function fieldBlock(f: Field, i: number, values: string[], err?: string): Safe {
       }${!multi && f.required ? h` required` : ""}><span class="opt-mark ${multi ? "check" : "radio"}"></span><span class="opt-text">${o}</span></label>`,
     )}
   </div>
+  ${errorLine(f, err)}
+</fieldset>`;
+  }
+
+  if (f.type === "rating" || f.type === "scale") {
+    const { min, max } = RANGES[f.type];
+    const steps = Array.from({ length: max - min + 1 }, (_, k) => String(min + k));
+    const rating = f.type === "rating";
+    return h`<fieldset class="${cls}" id="q-${f.id}"${cond.attrs}${describedBy ? h` aria-describedby="${describedBy}"` : ""}>
+  ${cond.note}
+  <legend class="q-head">${meta(f, i, rating ? "1–5 stars" : `${min}–${max}`)}<span class="q-label">${f.label}</span></legend>
+  <div class="steps-row ${rating ? "is-rating" : "is-scale"}">
+    ${steps.map(
+      (s) => h`<label class="step-pick"><input type="radio" name="${f.id}" value="${s}"${v === s ? h` checked` : ""}${
+        f.required ? h` required` : ""
+      } aria-label="${rating ? `${s} star${s === "1" ? "" : "s"}` : s}"><span>${rating ? h`${icons.star}<b>${s}</b>` : s}</span></label>`,
+    )}
+  </div>
+  ${f.type === "scale" && (f.low_label || f.high_label) ? h`<div class="scale-ends"><span>${f.low_label ?? ""}</span><span>${f.high_label ?? ""}</span></div>` : ""}
   ${errorLine(f, err)}
 </fieldset>`;
   }
@@ -57,10 +105,17 @@ function fieldBlock(f: Field, i: number, values: string[], err?: string): Safe {
     control = h`<input class="input" type="email" id="in-${f.id}" name="${f.id}" value="${v}" maxlength="${max}" autocomplete="email" inputmode="email" placeholder="name@example.com" ${required}${aria}>`;
   } else if (f.type === "number") {
     control = h`<input class="input" type="text" id="in-${f.id}" name="${f.id}" value="${v}" maxlength="${max}" inputmode="decimal" autocomplete="off" ${required}${aria}>`;
+  } else if (f.type === "date") {
+    control = h`<input class="input" type="date" id="in-${f.id}" name="${f.id}" value="${v}" ${required}${aria}>`;
+  } else if (f.type === "url") {
+    // type=text, not type=url: browsers reject "example.com" without https://, which Relay accepts.
+    control = h`<input class="input" type="text" id="in-${f.id}" name="${f.id}" value="${v}" maxlength="${max}" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="example.com" ${required}${aria}>`;
+  } else if (f.type === "phone") {
+    control = h`<input class="input" type="tel" id="in-${f.id}" name="${f.id}" value="${v}" maxlength="${max}" autocomplete="tel" placeholder="+1 555 010 0000" ${required}${aria}>`;
   } else {
     control = h`<input class="input" type="text" id="in-${f.id}" name="${f.id}" value="${v}" maxlength="${max}" ${required}${aria}>`;
   }
-  return h`<div class="${cls}" id="q-${f.id}">${head}${control}${errorLine(f, err)}</div>`;
+  return h`<div class="${cls}" id="q-${f.id}"${cond.attrs}>${cond.note}${head}${control}${errorLine(f, err)}</div>`;
 }
 
 const honeypot = h`<div class="hp" aria-hidden="true"><label>Leave this empty<input type="text" name="_hp" tabindex="-1" autocomplete="off"></label></div>`;
@@ -73,16 +128,37 @@ export function formPage(o: {
   host: string;
   values: Values;
   errors: Errors;
+  /** Remaining spots when the form has a response limit. */
+  spotsLeft?: number | null;
+  /** Shown inside an iframe on another site. */
+  embed?: boolean;
 }): string {
   const { form, errors } = o;
+  const limits = [
+    form.settings.closes_at && h`<span class="chip">${icons.clock}Closes ${formatInstant(form.settings.closes_at)}</span>`,
+    typeof o.spotsLeft === "number" && h`<span class="chip">${o.spotsLeft} spot${o.spotsLeft === 1 ? "" : "s"} left</span>`,
+  ].filter(Boolean);
   const fieldErrors = Object.keys(errors).filter((k) => k !== "_form").length;
   const body = h`
 <section class="form-head">
   <p class="eyebrow"><span class="dot"></span>Form · ${form.fields.length} question${form.fields.length === 1 ? "" : "s"} · ${minutes(form.fields)}</p>
   <h1 class="display">${form.title}</h1>
   ${form.description ? h`<p class="lede">${form.description}</p>` : ""}
-  <div class="meta-row">
-    <a class="chip" href="/c/${form.id}" rel="noreferrer">${icons.chat}Prefer a chat? Fill it with Claude</a>
+  ${limits.length ? h`<div class="meta-row">${limits}</div>` : ""}
+  <div class="assist" role="group" aria-labelledby="assist-label">
+    <p class="assist-label" id="assist-label">${icons.chat}<span>Prefer a chat? Your assistant can draft answers from what it knows about you.</span></p>
+    <div class="assist-row">
+      ${Object.entries(ASSISTANTS).map(([key, a]) => h`<a class="chip" href="/c/${form.id}/${key}" rel="noreferrer"${newTab(o.embed)}>${a.name}</a>`)}
+      <details class="assist-other">
+        <summary class="chip">Other assistant</summary>
+        <label class="fine" for="relay-message">Paste this into any assistant:</label>
+        <textarea class="textarea message" id="relay-message" readonly rows="6" spellcheck="false">${renderChatPrompt(form, o.links)}</textarea>
+        <div class="copy-row">
+          <button class="btn btn-ghost" type="button" data-copy hidden>Copy message</button>
+          <p class="fine" id="copy-status" role="status" aria-live="polite"></p>
+        </div>
+      </details>
+    </div>
   </div>
 </section>
 ${
@@ -92,17 +168,26 @@ ${
       }</div></div>`
     : ""
 }
-<form method="post" action="/f/${form.id}/submit" accept-charset="utf-8">
+<form method="post" action="/f/${form.id}/submit${embedQs(o.embed)}" accept-charset="utf-8" data-relay-form>
   <div class="questions">
-    ${form.fields.map((f, i) => fieldBlock(f, i, o.values[f.id] ?? [], errors[f.id]))}
+    ${form.fields.map((f, i) => fieldBlock(f, i, o.values[f.id] ?? [], errors[f.id], form.fields))}
   </div>
   ${honeypot}
   <div class="actions">
     <button class="btn btn-primary" type="submit">Submit response ${icons.arrow}</button>
     <p class="fine">Answers are sent to <span class="mono">${o.host}</span>. Nothing is shared until you submit.</p>
   </div>
-</form>`;
-  return layout({ title: form.title, body, host: o.host, noindex: true });
+</form>
+<p class="fine agent-note">For AI assistants: a plain-text version of this form, with instructions, is at <a href="${o.links.clean}">${o.links.clean}</a>.</p>`;
+  return layout({
+    title: form.title,
+    body,
+    host: o.host,
+    noindex: true,
+    alternate: o.links.clean,
+    scripts: [`/assets/relay.js?v=${PAGE_JS_VERSION}`],
+    ...look(form, o.embed),
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -110,7 +195,17 @@ ${
 function displayValue(f: Field, values: string[]): Safe {
   if (!values.length) return h`<dd class="empty">No answer</dd>`;
   if (f.type === "multi_choice") return h`<dd><span class="tags">${values.map((v) => h`<span class="tag">${v}</span>`)}</span></dd>`;
-  return h`<dd>${values[0]}</dd>`;
+  const v = values[0]!;
+  if (f.type === "rating" && /^[1-5]$/.test(v)) {
+    const n = Number(v);
+    return h`<dd><span class="stars" aria-label="${v} of 5 stars">${Array.from({ length: 5 }, (_, k) => h`<span class="${k < n ? "on" : ""}">${icons.star}</span>`)}</span> ${v} / 5</dd>`;
+  }
+  if (f.type === "scale") return h`<dd>${v} / 10</dd>`;
+  if (f.type === "date") {
+    const d = parseDate(v);
+    if (d) return h`<dd>${new Date(`${d}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}</dd>`;
+  }
+  return h`<dd>${v}</dd>`;
 }
 
 export function reviewPage(o: {
@@ -123,6 +218,10 @@ export function reviewPage(o: {
 }): string {
   const { form, errors } = o;
   const valid = Object.keys(errors).length === 0;
+  // Questions whose condition isn't met by these answers are left out of the review.
+  const given = Object.fromEntries(Object.entries(o.values).map(([k, v]) => [k, v.length > 1 ? v : (v[0] ?? "")]).filter(([, v]) => v !== ""));
+  const visible = visibleFieldIds(form.fields, given);
+  const shown = form.fields.filter((f) => visible.has(f.id));
   const body = h`
 <section class="form-head">
   <p class="eyebrow"><span class="dot"></span>Review before submitting</p>
@@ -146,9 +245,9 @@ ${
 }
 
 <dl class="answers">
-  ${form.fields.map(
-    (f, i) => h`<div class="answer${errors[f.id] ? " has-error" : ""}">
-    <dt><span class="q-num">${num(i)}</span><span>${f.label}</span></dt>
+  ${shown.map(
+    (f) => h`<div class="answer${errors[f.id] ? " has-error" : ""}">
+    <dt><span class="q-num">${num(form.fields.indexOf(f))}</span><span>${f.label}</span></dt>
     ${displayValue(f, o.values[f.id] ?? [])}
     ${errors[f.id] ? h`<p class="q-error">${errors[f.id]}</p>` : ""}
   </div>`,
@@ -158,7 +257,7 @@ ${
 ${
   valid
     ? h`<form method="post" action="/f/${form.id}/submit" accept-charset="utf-8">
-  ${form.fields.flatMap((f) => (o.values[f.id] ?? []).map((v) => h`<input type="hidden" name="${f.id}" value="${v}">`))}
+  ${shown.flatMap((f) => (o.values[f.id] ?? []).map((v) => h`<input type="hidden" name="${f.id}" value="${v}">`))}
   ${honeypot}
   <div class="actions">
     <button class="btn btn-primary" type="submit">${icons.check} Submit these answers</button>
@@ -167,7 +266,7 @@ ${
 </form>`
     : h`<div class="actions"><a class="btn btn-primary" href="${o.editHref}" rel="noreferrer">${icons.edit} Fix in the web form</a></div>`
 }`;
-  return layout({ title: `Review · ${form.title}`, body, host: o.host, noindex: true });
+  return layout({ title: `Review · ${form.title}`, body, host: o.host, noindex: true, ...look(form) });
 }
 
 /* ------------------------------------------------------------------ */
@@ -181,6 +280,7 @@ function resultPage(o: {
   icon: Safe;
   tone?: "mint" | "neutral";
   actions?: Safe;
+  look?: ReturnType<typeof look>;
 }): string {
   const body = h`<section class="result">
   <div class="badge${o.tone === "neutral" ? " neutral" : ""}">${o.icon}</div>
@@ -189,22 +289,23 @@ function resultPage(o: {
   <p class="lede">${o.lede}</p>
   ${o.actions ?? ""}
 </section>`;
-  return layout({ title: o.title, body, host: o.host, noindex: true });
+  return layout({ title: o.title, body, host: o.host, noindex: true, ...o.look });
 }
 
-/** /c/:id — copy the prepared message, then open Claude and paste it. */
-export function claudePage(o: { host: string; form: StoredForm; message: string; fillUrl: string }): string {
+/** /c/:id/:assistant fallback for forms too long for a prefilled link: copy the message, open the assistant, paste. */
+export function assistantPage(o: { host: string; form: StoredForm; assistant: Assistant; message: string; fillUrl: string }): string {
   const n = o.form.fields.length;
+  const name = o.assistant.name;
   const body = h`
 <section class="form-head">
-  <p class="eyebrow"><span class="dot mint"></span>Fill it with Claude · ${n} question${n === 1 ? "" : "s"}</p>
+  <p class="eyebrow"><span class="dot mint"></span>Fill it with ${name} · ${n} question${n === 1 ? "" : "s"}</p>
   <h1 class="display">${o.form.title}</h1>
-  <p class="lede">Claude asks you the questions in a chat, then gives you a link to check your answers. Nothing is sent until you press Submit on that page.</p>
+  <p class="lede">${name} asks you the questions in a chat, then gives you a link to check your answers. Nothing is sent until you press Submit on that page.</p>
 </section>
 <div class="questions handoff">
   <section class="q">
     <p class="q-meta"><span class="q-num">01</span><span class="q-hint">Copy this message</span></p>
-    <label class="q-label" for="relay-message">Your message to Claude</label>
+    <label class="q-label" for="relay-message">Your message to ${name}</label>
     <textarea class="textarea message" id="relay-message" readonly rows="4" spellcheck="false">${o.message}</textarea>
     <div class="copy-row">
       <button class="btn btn-ghost" type="button" data-copy hidden>Copy message</button>
@@ -212,43 +313,72 @@ export function claudePage(o: { host: string; form: StoredForm; message: string;
     </div>
   </section>
   <section class="q">
-    <p class="q-meta"><span class="q-num">02</span><span class="q-hint">Open Claude and paste it</span></p>
+    <p class="q-meta"><span class="q-num">02</span><span class="q-hint">Open ${name} and paste it</span></p>
     <p class="q-label">Start a new chat, paste the message and send it.</p>
     <div class="copy-row">
-      <a class="btn btn-primary" href="https://claude.ai/new" target="_blank" rel="noopener noreferrer" data-copy>${icons.chat}Copy and open Claude</a>
+      <a class="btn btn-primary" href="${o.assistant.home}" target="_blank" rel="noopener noreferrer" data-copy>${icons.chat}Copy and open ${name}</a>
     </div>
-    <p class="fine">Any assistant that can read web pages works too, such as ChatGPT or Gemini.</p>
   </section>
 </div>
 <div class="actions">
-  <p class="fine">Why copy and paste? Claude only reads a link that you send it yourself. Prefer a normal form? <a href="${o.fillUrl}">Fill it in here</a>.</p>
+  <p class="fine">This form is too long to hand over in one link, so it goes by copy and paste. Prefer a normal form? <a href="${o.fillUrl}">Fill it in here</a>.</p>
 </div>`;
   return layout({
-    title: `Fill with Claude · ${o.form.title}`,
+    title: `Fill with ${name} · ${o.form.title}`,
     body,
     host: o.host,
     noindex: true,
-    scripts: [`/assets/copy.js?v=${COPY_JS_VERSION}`],
+    ...look(o.form),
+    scripts: [`/assets/relay.js?v=${PAGE_JS_VERSION}`],
   });
 }
 
-export const thanksPage = (host: string, form: StoredForm) =>
-  resultPage({
+export function thanksPage(host: string, form: StoredForm, embed = false): string {
+  const ty = form.settings.thank_you;
+  return resultPage({
+    look: look(form, embed),
     host,
     title: `Thank you · ${form.title}`,
     eyebrow: "Response received",
     heading: h`Thank <em>you.</em>`,
-    lede: h`Your answers to “${form.title}” were saved. You can close this tab.`,
+    lede: ty?.message ?? h`Your answers to “${form.title}” were saved. You can close this tab.`,
     icon: icons.check,
+    actions:
+      ty?.button_url && ty.button_label
+        ? h`<div class="actions"><a class="btn btn-primary" href="${ty.button_url}" rel="noopener noreferrer"${newTab(embed)}>${ty.button_label} ${icons.arrow}</a><p class="fine">Opens <span class="mono">${hostOf(ty.button_url)}</span></p></div>`
+        : undefined,
   });
+}
 
-export const closedPage = (host: string, form: StoredForm) =>
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/** "21 November 2026, 18:00 UTC" */
+export function formatInstant(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+  return `${date}, ${time} UTC`;
+}
+
+export const closedPage = (host: string, form: StoredForm, embed = false) =>
   resultPage({
+    look: look(form, embed),
     host,
     title: `Closed · ${form.title}`,
-    eyebrow: "Form closed",
-    heading: "This form is closed.",
-    lede: h`“${form.title}” is no longer accepting responses.`,
+    eyebrow: form.closed_reason === "full" ? "Form full" : "Form closed",
+    heading: form.closed_reason === "full" ? "All spots are taken." : "This form is closed.",
+    lede:
+      form.closed_reason === "deadline" && form.settings.closes_at
+        ? h`“${form.title}” stopped accepting responses on ${formatInstant(form.settings.closes_at)}.`
+        : form.closed_reason === "full"
+          ? h`“${form.title}” has reached its limit of ${String(form.settings.max_responses)} responses.`
+          : h`“${form.title}” is no longer accepting responses.`,
     icon: icons.lock,
     tone: "neutral",
   });
@@ -282,41 +412,118 @@ export const rateLimitedPage = (host: string) =>
 
 export function homePage(o: { host: string; baseUrl: string }): string {
   const body = h`
-<section class="hero">
-  <p class="eyebrow"><span class="dot"></span>Forms + MCP · self-hosted</p>
-  <h1 class="display">Ask in a chat.<br><em>Collect</em> in a form.</h1>
-  <p class="lede">Relay turns a request to Claude into a form with two links — one for the browser, one for any assistant. Answers come back to the same chat, counted and summarized. The server never calls a model.</p>
-  <div class="actions">
-    <a class="btn btn-ink" href="#connect">Connect Claude ${icons.arrow}</a>
-    <a class="btn btn-ghost" href="#how">How it works</a>
-  </div>
-</section>
-
-<section class="steps" id="how" aria-label="How it works">
-  <div class="step"><span class="q-num">01 — Create</span><h3>Describe what to ask</h3><p>Tell Claude who you're asking and why. It drafts the questions and creates the form through Relay's tools.</p></div>
-  <div class="step"><span class="q-num">02 — Share</span><h3>Paste one message</h3><p>You get a message ready for WhatsApp or email with two links. You send it — Relay never messages anyone.</p></div>
-  <div class="step"><span class="q-num">03 — Read</span><h3>Ask for the results</h3><p>Counts, averages and sample answers are computed on the server, so your chat stays small and fast.</p></div>
-</section>
-
-<section class="split">
+<section class="hero hero-grid">
   <div>
-    <p class="eyebrow"><span class="dot mint"></span>Respondents install nothing</p>
-    <h2>Two links, one save.</h2>
-    <p>People tap the form link and fill it in a browser. Or they tap the Claude link, answer in a chat, and confirm on a review page. Both paths end at the same validated submit.</p>
+    <p class="eyebrow"><span class="dot"></span>Agent-first form builder · open source</p>
+    <h1 class="display">Ask for a form.<br><em>Ask</em> what people said.</h1>
+    <p class="lede">Relay is the form builder you run from your AI assistant. Describe what you need, share one link, then ask how it's going. Relay builds the form, runs it on its own, and turns the answers into answers.</p>
+    <div class="actions">
+      <a class="btn btn-ink" href="#connect">Connect your assistant ${icons.arrow}</a>
+      <a class="btn btn-ghost" href="#understand">See the analysis</a>
+    </div>
   </div>
-  <div class="links-demo">
-    <div class="link-card"><span class="ic a">${icons.form}</span><div><strong>Quick form</strong><span>${o.host}/f/…</span></div></div>
-    <div class="link-card"><span class="ic m">${icons.chat}</span><div><strong>Fill it with Claude</strong><span>${o.host}/c/…</span></div></div>
-    <div class="link-card"><span class="ic a">${icons.lock}</span><div><strong>Review, then submit</strong><span>Nothing saves until the person presses Submit</span></div></div>
+  <div class="chat-mock" aria-label="Example conversation with an assistant using Relay">
+    <div class="bubble me">Make a sign-up for Saturday's workshop. 30 seats, close Friday 6pm, then send people to my booking link.</div>
+    <div class="bubble ai"><span class="tool">${icons.form}create_form</span>Done. Here's the message to send:<span class="share">Hi! Grab a seat for Saturday's workshop.<br>Form: ${o.host}/f/…</span></div>
+    <div class="bubble me">How's it going?</div>
+    <div class="bubble ai"><span class="tool">${icons.chat}summarize_responses</span><b>23 signed up, 7 seats left.</b> 14 beginners, 9 experienced. 5 staying for lunch, 2 vegetarian.</div>
   </div>
+</section>
+
+<section class="pillars" aria-label="What Relay does">
+  <div class="pillar"><span class="q-num">01 — Ask</span><h3>Build by describing it</h3><p>Your assistant drafts the questions, picks the types and adds conditions. You get a message ready for WhatsApp or email.</p></div>
+  <div class="pillar"><span class="q-num">02 — Run</span><h3>It runs itself</h3><p>Seats, deadlines and next steps are set in one sentence. The form counts down, closes on time and says why.</p></div>
+  <div class="pillar"><span class="q-num">03 — Understand</span><h3>Ask what people said</h3><p>Exact counts, averages and NPS, computed by Relay. Your assistant explains them, compares them and acts on them.</p></div>
+</section>
+
+<section class="split feature" id="ask">
+  <div>
+    <p class="eyebrow"><span class="dot"></span>Ask</p>
+    <h2>A form from one sentence.</h2>
+    <p>Say who you're asking and why. Relay turns it into a real form: choices, ratings, 0–10 scales, dates, links, phone numbers, and questions that appear only when they apply.</p>
+    <ul class="ticks">
+      <li>${icons.check}<span><b>Conditional questions.</b> "Ask about lunch only if they're staying."</span></li>
+      <li>${icons.check}<span><b>Safe edits.</b> Reword or add questions any time. Relay refuses changes that would make existing answers misleading, and says why.</span></li>
+      <li>${icons.check}<span><b>Your look.</b> Your colour, adjusted for readability, and your logo. Embed it only on the sites you choose.</span></li>
+    </ul>
+  </div>
+  <div class="mock-card" aria-hidden="true">
+    <p class="mock-eyebrow">Form · 5 questions · ~2 min</p>
+    <p class="mock-title">Saturday workshop</p>
+    <div class="mock-q"><span>Experience level</span><span class="mock-pills"><i>Beginner</i><i class="on">Experienced</i></span></div>
+    <div class="mock-q"><span>Staying for lunch?</span><span class="mock-pills"><i class="on">Yes</i><i>No</i></span></div>
+    <div class="mock-q cond"><span>${icons.branch}Dietary needs <em>only if staying for lunch</em></span><span class="mock-line"></span></div>
+    <div class="mock-q"><span>How likely are you to recommend us?</span><span class="mock-scale">${Array.from({ length: 11 }, (_, i) => h`<i${i === 9 ? h` class="on"` : ""}>${String(i)}</i>`)}</span></div>
+  </div>
+</section>
+
+<section class="split feature" id="run">
+  <div class="mock-card run" aria-hidden="true">
+    <div class="mock-chips"><span class="chip">${icons.clock}Closes Friday, 18:00</span><span class="chip">7 spots left</span></div>
+    <div class="seat-bar"><span class="seat-fill"></span><b>23 / 30</b></div>
+    <div class="mock-thanks">
+      <p class="mock-title">Thank <em>you.</em></p>
+      <p>You're in! Pick a slot for the prep call.</p>
+      <span class="btn btn-primary btn-sm">Book your prep call ${icons.arrow}</span>
+    </div>
+  </div>
+  <div>
+    <p class="eyebrow"><span class="dot mint"></span>Run</p>
+    <h2>Set it once. It runs itself.</h2>
+    <p>Tell your assistant the rules in plain words. Relay keeps them for you.</p>
+    <ul class="ticks">
+      <li>${icons.check}<span><b>Seats, first come first served.</b> "100 seats." The form shows what's left, closes at 100, and the last person still gets their confirmation.</span></li>
+      <li>${icons.check}<span><b>Deadlines.</b> "Close Friday 6pm." It closes on time and tells late visitors why.</span></li>
+      <li>${icons.check}<span><b>A next step.</b> A custom thank-you message and button, such as "Book your call".</span></li>
+      <li>${icons.check}<span><b>A webhook for every response.</b> Signed, for Slack, Zapier, n8n or your own code.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="understand" id="understand">
+  <div class="understand-head">
+    <p class="eyebrow"><span class="dot"></span>Understand</p>
+    <h2>The analysis lives in your chat.</h2>
+    <p>Relay computes the numbers exactly, so your assistant never has to guess them. Then you ask questions the way you'd ask a colleague.</p>
+  </div>
+  <div class="understand-grid">
+    <div class="ask-card">
+      <p class="ask">"Anything new?"</p>
+      <p class="answer-text"><b>3 new responses</b> since you last checked. Relay remembers what you've already seen, form by form.</p>
+    </div>
+    <div class="ask-card">
+      <p class="ask">"How did people rate it?"</p>
+      <div class="bars" aria-hidden="true">
+        <div><span>Great</span><i class="w78"></i><b>18</b></div>
+        <div><span>Okay</span><i class="w17"></i><b>4</b></div>
+        <div><span>Poor</span><i class="w4"></i><b>1</b></div>
+      </div>
+      <p class="answer-text">Exact counts, averages and medians, and <b>NPS +42</b> for 0–10 scales.</p>
+    </div>
+    <div class="ask-card">
+      <p class="ask">"Who's a strong lead? Draft them a reply."</p>
+      <p class="answer-text">Your assistant reads the responses, ranks them and drafts the follow-ups. You send them.</p>
+    </div>
+    <div class="ask-card">
+      <p class="ask">"Export it."</p>
+      <p class="answer-text">A CSV link for Excel or Sheets that works for 15 minutes and carries no key.</p>
+    </div>
+  </div>
+</section>
+
+<section class="principles" aria-label="Safe and open">
+  <div class="principle"><h3>Safe to hand to an agent</h3><p>Answers reach your assistant marked as data, so a response that says "ignore your instructions" can't steer it.</p></div>
+  <div class="principle"><h3>A person always confirms</h3><p>Nothing is submitted for anyone. Opening a link never saves anything.</p></div>
+  <div class="principle"><h3>Zero AI cost</h3><p>Relay never calls a model. Your own assistant does the thinking, on your own plan.</p></div>
+  <div class="principle"><h3>Open source, yours to host</h3><p>Run it free on Vercel and Turso, keep your data, and export it whenever you like.</p></div>
 </section>
 
 <section class="split" id="connect">
   <div>
-    <p class="eyebrow"><span class="dot"></span>For creators</p>
-    <h2>Connect Claude.</h2>
+    <p class="eyebrow"><span class="dot"></span>Connect</p>
+    <h2>Connect your assistant.</h2>
     <p>Add Relay as a remote connector at <span class="mono">${o.baseUrl}/mcp</span>, or run the local MCP program with your owner key in Claude Desktop.</p>
-    <p class="fine">Six tools: create_form · list_forms · get_form · get_responses · summarize_responses · close_form</p>
+    <p class="fine">Eight tools: create_form · update_form · list_forms · get_form · get_responses · summarize_responses · export_responses · close_form</p>
   </div>
   <pre class="code"><span class="c">// claude_desktop_config.json</span>
 {
@@ -333,15 +540,17 @@ export function homePage(o: { host: string; baseUrl: string }): string {
 }</pre>
 </section>
 
-<section class="principles" aria-label="Principles">
-  <div class="principle"><h3>Zero token cost</h3><p>The server never calls a model. Claude on each person's own plan does the thinking.</p></div>
-  <div class="principle"><h3>MCP is for creators</h3><p>Respondents need nothing but a link.</p></div>
-  <div class="principle"><h3>One thin layer</h3><p>The MCP tools call the same API the pages use — no hidden logic.</p></div>
-  <div class="principle"><h3>People send, not servers</h3><p>Whatever reaches a person is sent by a person.</p></div>
+<section class="devs" aria-label="For developers">
+  <p class="eyebrow"><span class="dot mint"></span>For developers</p>
+  <div class="dev-grid">
+    <div><h3>REST API</h3><p>Everything the tools do, behind one owner key: <span class="mono">/api/forms</span>.</p></div>
+    <div><h3>Webhooks</h3><p><span class="mono">response.created</span>, signed with HMAC-SHA256.</p></div>
+    <div><h3>Agent-readable forms</h3><p>Every form has a plain-text version for assistants. The format is open: <a href="/spec">/spec</a>.</p></div>
+  </div>
 </section>`;
   return layout({
-    title: "Relay — forms that travel through conversation",
-    description: "Create forms from Claude, share two links, read the answers back.",
+    title: "Relay — the agent-first form builder",
+    description: "Build forms by asking your AI assistant, share one link, and ask what people said. Open source.",
     body,
     host: o.host,
     wide: true,

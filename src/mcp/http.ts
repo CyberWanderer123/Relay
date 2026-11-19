@@ -18,7 +18,7 @@ import { createMcpServer } from "./tools.js";
  */
 export function mcpRoutes({ relay, config }: Deps) {
   const r = new Hono();
-  const backend = localBackend(relay);
+  const backend = localBackend(relay, config.ownerKey);
 
   const notAllowed = () =>
     new Response(

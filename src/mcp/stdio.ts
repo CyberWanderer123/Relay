@@ -24,7 +24,7 @@ if (remote) {
   backend = httpBackend(remote, config.ownerKey);
   console.error(`relay-mcp: using hosted Relay at ${remote}`);
 } else {
-  backend = localBackend(createRelay(openDb(config.dbUrl, config.dbAuthToken), config.baseUrl));
+  backend = localBackend(createRelay(openDb(config.dbUrl, config.dbAuthToken), config.baseUrl), config.ownerKey);
   console.error(`relay-mcp: using database ${config.dbUrl.split("?")[0]}; links point to ${config.baseUrl}`);
 }
 

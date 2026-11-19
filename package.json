@@ -9,7 +9,8 @@
     "seed": "tsx src/cli/seed.ts",
     "forms:delete": "tsx src/cli/delete-form.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "spec": "node scripts/build-spec.mjs"
   },
   "author": "",
   "license": "UNLICENSED",

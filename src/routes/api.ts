@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { RelayError } from "../errors.js";
 import type { ShareOptions } from "../service.js";
 import { keyMatches, type Deps } from "./deps.js";
+import { csvResponse, makeExportLink } from "./export.js";
 
 /**
  * Owner-key guard shared by /api and /mcp.
@@ -61,14 +62,38 @@ export function apiRoutes({ relay, config }: Deps) {
 
   r.get("/api/forms/:id", async (c) => c.json(await relay.getForm(c.req.param("id"), shareOptions((k) => c.req.query(k)))));
 
+  // Replace the title, description and questions. Same body as POST /api/forms.
+  r.put("/api/forms/:id", async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new RelayError(400, "Send the form as a JSON body.");
+    }
+    return c.json(await relay.updateForm(c.req.param("id"), body));
+  });
+
   r.get("/api/forms/:id/responses", async (c) => {
     const limit = c.req.query("limit");
+    const onlyNew = c.req.query("only_new");
     return c.json(
       await relay.getResponses(c.req.param("id"), {
         limit: limit ? Number(limit) : undefined,
         cursor: c.req.query("cursor") ?? null,
+        onlyNew: onlyNew === "1" || onlyNew === "true",
       }),
     );
+  });
+
+  r.get("/api/forms/:id/responses.csv", async (c) => {
+    const out = await relay.exportResponses(c.req.param("id"));
+    return csvResponse(out.csv, out.filename);
+  });
+
+  // A download link that works without the key for 15 minutes — for agents that hand the creator a link.
+  r.post("/api/forms/:id/export-link", async (c) => {
+    const out = await relay.exportResponses(c.req.param("id"));
+    return c.json({ ...makeExportLink(relay.baseUrl, config.ownerKey, c.req.param("id")), filename: out.filename, response_count: out.count });
   });
 
   r.get("/api/forms/:id/summary", async (c) => c.json(await relay.summarize(c.req.param("id"))));

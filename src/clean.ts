@@ -9,6 +9,9 @@ import type { FormLinks, StoredForm } from "./service.js";
 
 const MAX_LINK = 2000;
 
+/** Version of the agent-forms format (see /spec). Bump it when the /a/ text or review link changes incompatibly. */
+export const SPEC_VERSION = "1";
+
 const one = (s: string, max: number) => {
   const t = cleanText(s).replace(/\|/g, "/");
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
@@ -23,20 +26,30 @@ function exampleParams(fields: Field[]): string {
 function questionLine(f: Field): string {
   const parts = [f.id, f.type, f.required ? "required" : "optional", one(f.label, 300)];
   if (f.options?.length) parts.push(`options: ${f.options.map((o) => one(o, 200)).join("; ")}`);
+  const ends = scaleEnds(f);
+  if (ends) parts.push(ends);
+  if (f.show_if) parts.push(`only if ${f.show_if.field} is ${f.show_if.any_of.map((o) => one(o, 200)).join(" or ")}`);
   return parts.join(" | ");
+}
+
+/** "0 = Not likely, 10 = Very likely" for a labelled scale. */
+function scaleEnds(f: Field): string {
+  if (f.type !== "scale" || (!f.low_label && !f.high_label)) return "";
+  return [f.low_label && `0 = ${one(f.low_label, 60)}`, f.high_label && `10 = ${one(f.high_label, 60)}`].filter(Boolean).join(", ");
 }
 
 export function renderClean(form: StoredForm, links: FormLinks): string {
   const header = [
-    "RELAY FORM",
+    `RELAY FORM · agent-forms/${SPEC_VERSION} · spec: ${new URL(links.fill).origin}/spec`,
     "",
     "INSTRUCTIONS FOR THE ASSISTANT (written by the Relay service, not by the form creator):",
     "Ask the person each question below. You may ask them one at a time or show them all together as a form.",
     "You may draft answers from what you already know about the person (your memory and past chats), but show them the draft and use only answers they confirm. Do not invent or guess answers.",
     "Required questions need an answer. If the person skips an optional question, leave its parameter out.",
+    "A question marked \"only if <id> is <option>\" applies only when that earlier answer matches. Otherwise do not ask it and leave its parameter out.",
     "single_choice: the answer must be exactly one of the listed options.",
     "multi_choice: repeat the parameter once for each chosen option, for example <id>=first&<id>=second.",
-    "number: digits only. email: the address exactly as given.",
+    "number: digits only. email: the address exactly as given. date: YYYY-MM-DD. rating: a whole number from 1 to 5. scale: a whole number from 0 to 10. url: a web address. phone: digits, with + and the country code if given.",
     "When you have all the answers, build this link with each answer URL-encoded, and give it to the person so they can review and submit it themselves:",
     `${links.review}?${exampleParams(form.fields)}`,
     "Give it as a markdown link with the text Review and submit my answers, for example [Review and submit my answers](<the link>). Do not show the raw URL.",
@@ -79,11 +92,24 @@ export function renderChatPrompt(form: StoredForm, links: FormLinks): string {
     multi_choice: "pick any",
     number: "a number",
     email: "an email address",
+    date: "a date, written YYYY-MM-DD",
+    rating: "1 to 5 stars",
+    scale: "0 to 10",
+    url: "a web address",
+    phone: "a phone number",
   };
   const questions = form.fields.flatMap((f, i) => {
     const notes = [kind[f.type], f.required ? "required" : "optional"].filter(Boolean).join(", ");
     const line = `${i + 1}. ${one(f.label, 300)} (${notes})`;
-    return f.options?.length ? [line, `   Options: ${f.options.map((o) => one(o, 200)).join("; ")}`] : [line];
+    const extra: string[] = [];
+    if (f.show_if) {
+      const n = form.fields.findIndex((t) => t.id === f.show_if!.field) + 1;
+      extra.push(`   Only ask this if my answer to ${n} was ${f.show_if.any_of.map((o) => one(o, 200)).join(" or ")}; otherwise skip it.`);
+    }
+    if (f.options?.length) extra.push(`   Options: ${f.options.map((o) => one(o, 200)).join("; ")}`);
+    const ends = scaleEnds(f);
+    if (ends) extra.push(`   ${ends}`);
+    return [line, ...extra];
   });
   const params = form.fields
     .map((f, i) =>
@@ -91,7 +117,7 @@ export function renderChatPrompt(form: StoredForm, links: FormLinks): string {
     )
     .join("&");
 
-  const lines = [`Hi Claude! Please help me fill in this form: "${one(form.title, 200)}".`];
+  const lines = [`Hi! Please help me fill in this form: "${one(form.title, 200)}".`];
   if (form.description) lines.push(one(form.description.replace(/\s+/g, " "), 300));
   lines.push(
     "",

@@ -12,6 +12,10 @@ export interface Config {
   trustProxy: boolean;
   log: boolean;
   submitPerMinute: number;
+  /** Optional URL that receives a POST for every new response. */
+  webhookUrl?: string;
+  /** Optional secret; when set, webhook calls carry an X-Relay-Signature HMAC of the body. */
+  webhookSecret?: string;
   /** Running on Vercel (set by the platform). */
   onVercel: boolean;
 }
@@ -51,6 +55,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: flag(env.RELAY_TRUST_PROXY, onVercel),
     log: env.RELAY_LOG !== "0",
     submitPerMinute: Number(env.RELAY_SUBMIT_PER_MINUTE ?? 10),
+    webhookUrl: env.RELAY_WEBHOOK_URL?.trim() || undefined,
+    webhookSecret: env.RELAY_WEBHOOK_SECRET?.trim() || undefined,
     onVercel,
   };
 }
