@@ -229,6 +229,5 @@ npm run spec      # after editing docs/agent-forms.md, copies it into src/spec.t
 | `src/clean.ts` | The plain-text version of a form for assistants |
 | `docs/agent-forms.md` | The agent-forms spec, also served at `/spec` |
 | `test/` | Vitest suites |
-| `marketing/` | Launch video project and script. Optional, with its own dependencies; not needed to run Relay |
 
 `test/__snapshots__/clean.test.ts.snap` holds the exact `/clean` text. Any change to the assistant instructions shows up there in review — update it deliberately with `npx vitest run -u`.

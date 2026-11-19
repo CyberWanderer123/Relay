@@ -4,5 +4,5 @@ data/
 .env
 *.log
 
-# Rendered marketing media (rebuilt by marketing/video/relay-launch/render-all.sh)
-marketing/*.mp4
+# Marketing material (launch video, scripts) is kept locally, not in the repository
+marketing/
