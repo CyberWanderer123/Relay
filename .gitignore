@@ -3,3 +3,6 @@ dist/
 data/
 .env
 *.log
+
+# Rendered marketing media (rebuilt by marketing/video/relay-launch/render-all.sh)
+marketing/*.mp4
