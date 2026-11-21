@@ -239,6 +239,9 @@ export function createRelay(db: DB, baseUrl: string, hosting: HostingOptions = {
       return { id, key, name };
     },
 
+    /** True when an account already uses this email (case-insensitive). */
+    emailTaken: async (email: string) => Boolean(await q.accountByEmail(email.trim())),
+
     /** The account an account key belongs to, or null. */
     async accountForKey(key: string) {
       if (!key.startsWith("rly_key_")) return null;

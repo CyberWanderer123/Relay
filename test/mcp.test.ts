@@ -145,7 +145,7 @@ describe("/mcp connector compatibility", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result: { serverInfo: { name: string } } };
-    expect(body.result.serverInfo.name).toBe("relay");
+    expect(body.result.serverInfo.name).toBe("relay-forms");
   });
 });
 

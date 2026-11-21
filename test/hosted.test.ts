@@ -29,7 +29,7 @@ describe("hosted sign-up through the connector", () => {
     expect(allow).toContain("Create a free account");
     expect(allow).toContain("2 responses a month");
 
-    const signup = await app.request("/oauth/signup", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...Object.fromEntries(params), name: "Asha" }) });
+    const signup = await app.request("/oauth/signup", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...Object.fromEntries(params), name: "Asha", email: "asha@example.com" }) });
     const page = await signup.text();
     const key = /<code class="keybox">(rly_key_[A-Za-z0-9_-]+)<\/code>/.exec(page)![1]!;
     expect(signup.headers.get("content-security-policy")).toContain("form-action 'self' https://claude.ai");
@@ -134,5 +134,26 @@ describe("self-hosted Relays", () => {
     expect(html).toContain("Use Relay right here");
     expect(html).toContain("https://relay.test/mcp");
     expect(html).toContain("mailto:hello@example.com");
+  });
+});
+
+describe("sign-up requires an email, one account per email", () => {
+  it("refuses a missing email and a reused one", async () => {
+    const { app } = hosted();
+    const reg = (await (await app.request("/oauth/register", json({ client_name: "Claude", redirect_uris: [REDIRECT], token_endpoint_auth_method: "none" }))).json()) as { client_id: string };
+    const params = { response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: "S256", state: "s" };
+    const signup = (extra: Record<string, string>) =>
+      app.request("/oauth/signup", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ ...params, ...extra }) });
+
+    const none = await signup({ name: "No email" });
+    expect(none.status).toBe(401);
+    expect(await none.text()).toContain("Enter a valid email address");
+
+    expect((await signup({ email: "same@example.com" })).status).toBe(200);
+    const again = await signup({ email: "SAME@example.com" });
+    expect(again.status).toBe(401);
+    const text = await again.text();
+    expect(text).toContain("An account already uses SAME@example.com");
+    expect(text).toContain("hello@example.com");
   });
 });

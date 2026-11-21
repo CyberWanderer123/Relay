@@ -180,6 +180,9 @@ export function makeQueries(db: DB) {
     accountByKeyHash: (hash: string) =>
       one<{ id: string; name: string | null; email: string | null; plan: string }>(`SELECT id, name, email, plan FROM accounts WHERE key_hash = ?`, [hash]),
 
+    accountByEmail: (email: string) =>
+      one<{ id: string }>(`SELECT id FROM accounts WHERE lower(email) = lower(?)`, [email]),
+
     accountById: (id: string) =>
       one<{ id: string; name: string | null; email: string | null; plan: string; key_hash: string }>(`SELECT id, name, email, plan, key_hash FROM accounts WHERE id = ?`, [id]),
 

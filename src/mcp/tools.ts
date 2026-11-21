@@ -46,7 +46,8 @@ async function run(fn: () => Promise<string>): Promise<CallToolResult> {
 }
 
 export function createMcpServer(backend: Backend): McpServer {
-  const server = new McpServer({ name: "relay", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  // A distinctive name and title: "Relay" alone clashes with other apps in assistant directories.
+  const server = new McpServer({ name: "relay-forms", title: "Relay Forms", version: "0.1.0", websiteUrl: "https://tryrelay.xyz" }, { instructions: INSTRUCTIONS });
 
   server.registerTool(
     "create_form",

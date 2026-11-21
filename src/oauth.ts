@@ -306,7 +306,11 @@ export function oauthRoutes({ relay, config }: Deps) {
     if (checked.kind === "redirect-error") return c.redirect(withParams(checked.redirect, { error: checked.error, error_description: checked.description, state: checked.state, iss: base }), 302);
     if (!signups.take(clientIp(c, config.trustProxy))) return showApproval(c, checked, "Too many new accounts from your network. Try again in an hour.", 401);
     const email = typeof body.email === "string" ? body.email.trim() : "";
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return showApproval(c, checked, "That email address doesn't look right. Leave it empty if you prefer.", 401);
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return showApproval(c, checked, "Enter a valid email address to create an account.", 401);
+    if (await relay.emailTaken(email)) {
+      const lost = relay.contactEmail ? `, or email ${relay.contactEmail} if you've lost it` : "";
+      return showApproval(c, checked, `An account already uses ${email}. Sign in below with its account key${lost}.`, 401);
+    }
     const account = await relay.createAccount({ name: typeof body.name === "string" ? body.name : undefined, email: email || undefined });
     // The key page posts to /oauth/authorize, which then redirects to the app.
     c.header(FORM_ACTION_HEADER, new URL(checked.redirect).origin);

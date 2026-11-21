@@ -2,6 +2,8 @@
 
 # Relay
 
+**Try it: [tryrelay.xyz](https://tryrelay.xyz)**. Add `https://tryrelay.xyz/mcp` as a connector in Claude, ChatGPT or any MCP client, and create a free account when asked.
+
 **The agent-first form builder.** Make forms by chatting with your AI assistant, share one link, and ask how it's going. No dashboard, no drag and drop: your assistant builds the form, Relay runs it, and the answers come back to the same chat, counted and summarised.
 
 - **Creators** work entirely through MCP from Claude, ChatGPT or any MCP client: create and edit forms, set seats and deadlines, read what's new, get exact summaries, export CSV.

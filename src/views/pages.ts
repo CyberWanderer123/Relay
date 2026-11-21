@@ -665,7 +665,7 @@ ${
   <form method="post" action="/oauth/signup" accept-charset="utf-8" class="signup-form">
     ${hiddenInputs}
     <input class="input" type="text" name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional)">
-    <input class="input" type="email" name="email" maxlength="254" autocomplete="email" placeholder="Email for important notices (optional)">
+    <input class="input" type="email" name="email" maxlength="254" autocomplete="email" placeholder="Email (for your account and important notices)" required>
     <button class="btn btn-ink" type="submit">Create a free account ${icons.arrow}</button>
   </form>
 </section>
@@ -785,7 +785,7 @@ export const privacyPage = (host: string, contactEmail?: string) =>
     intro: `This explains what the Relay service at ${host} stores and why. Relay keeps as little as it can, never calls an AI model with your data, never sells data and shows no ads.`,
     sections: [
       ["What is stored", [
-        "Forms: their questions and settings. Responses: the answers people submit. Accounts (hosted mode): an optional name and email, and a one-way hash of the account key (the key itself is never stored).",
+        "Forms: their questions and settings. Responses: the answers people submit. Accounts (hosted mode): your email, an optional name, and a one-way hash of the account key (the key itself is never stored). The email is used to identify your account and to contact you about it.",
         "Connections: assistants you connect, and their sign-in codes and tokens, stored only as one-way hashes.",
         "Request logs record the method, page and result of each request, never query strings or answers. Network addresses are used briefly, in memory, to limit abuse, and are not saved with responses.",
       ]],
