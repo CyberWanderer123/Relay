@@ -105,6 +105,7 @@ ${
     : h`<footer class="foot">
   <span>${o.brand?.logoUrl ? "Form made with Relay" : "Forms that travel through conversation · Relay"}</span>
   <span class="mono">${o.host}</span>
+  <span><a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></span>
 </footer>`
 }
 </body>

@@ -475,6 +475,9 @@ pre.code .c { color: var(--muted); }
 .hosted-start { margin-bottom: 28px; }
 .setup-step.featured { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 .own-title { margin: 0 0 14px; font-size: 20px; }
+.legal { display: grid; gap: 28px; margin-bottom: 40px; }
+.legal h2 { font-size: 26px; margin-bottom: 10px; }
+.legal p { margin: 0 0 10px; color: var(--text-2); font-size: 16px; line-height: 1.65; }
 .keygen { display: grid; gap: 10px; }
 .keygen summary { cursor: pointer; font-size: 15px; font-weight: 500; color: var(--primary); }
 .keygen[open] summary { margin-bottom: 4px; }

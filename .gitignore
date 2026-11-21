@@ -6,3 +6,6 @@ data/
 
 # Marketing material (launch video, scripts) is kept locally, not in the repository
 marketing/
+
+# Session handoff notes (local only)
+HANDOFF.md

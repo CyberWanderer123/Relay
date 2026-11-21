@@ -1,3 +1,5 @@
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN&envDescription=Your%20owner%20key%20(any%20long%20random%20secret)%20and%20your%20Turso%20database%20URL%20and%20token&envLink=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay%23deploy-to-vercel--turso-recommended)
+
 # Relay
 
 **The agent-first form builder.** Make forms by chatting with your AI assistant, share one link, and ask how it's going. No dashboard, no drag and drop: your assistant builds the form, Relay runs it, and the answers come back to the same chat, counted and summarised.
@@ -7,6 +9,7 @@
 - **The server never calls a model.** Claude on each person's own plan does the thinking, so Relay's token cost is zero.
 
 One TypeScript service (Hono + SQLite via libSQL). Deploy it to **Vercel with a Turso database**, or self-host it with Docker.
+
 
 ---
 

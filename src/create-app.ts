@@ -12,7 +12,7 @@ import { oauthRoutes } from "./oauth.js";
 import { formRoutes } from "./routes/form.js";
 import { reviewRoutes } from "./routes/review.js";
 import type { Relay } from "./service.js";
-import { errorPage, homePage, notFoundPage } from "./views/pages.js";
+import { errorPage, homePage, notFoundPage, privacyPage, termsPage } from "./views/pages.js";
 import { SPEC_MD } from "./spec.js";
 import { PAGE_JS } from "./views/scripts.js";
 import { themeCss } from "./views/theme.js";
@@ -82,6 +82,8 @@ export function createApp(relay: Relay, config: Config) {
     );
   });
   app.get("/healthz", (c) => c.json({ ok: true }));
+  app.get("/terms", (c) => c.html(termsPage(relay.host, config.contactEmail)));
+  app.get("/privacy", (c) => c.html(privacyPage(relay.host, config.contactEmail)));
   // A form's brand colour as CSS variables. A stylesheet, not inline styles, so the CSP stays strict.
   app.get("/f/:id/theme.css", async (c) => {
     const form = await relay.findForm(c.req.param("id"));

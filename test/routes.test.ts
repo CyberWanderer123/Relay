@@ -452,3 +452,14 @@ describe("example key on a set-up Relay", () => {
     expect(fresh).not.toContain('class="keygen"');
   });
 });
+
+describe("legal pages", () => {
+  it("serves terms and privacy, linked from every page footer", async () => {
+    const { app } = setup({ contactEmail: "hello@example.com" });
+    const terms = await (await app.request("/terms")).text();
+    expect(terms).toContain("provided &quot;as is&quot;");
+    expect(terms).toContain("mailto:hello@example.com");
+    expect(await (await app.request("/privacy")).text()).toContain("never calls an AI model");
+    expect(await (await app.request("/")).text()).toContain('<a href="/privacy">Privacy</a>');
+  });
+});

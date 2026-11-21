@@ -723,3 +723,87 @@ export const oauthErrorPage = (host: string, message: string) =>
     icon: icons.alert,
     tone: "neutral",
   });
+
+/* ------------------------------------------------------------------ */
+/* Legal pages: terms and privacy. Plain-language templates; the operator should review them. */
+/* ------------------------------------------------------------------ */
+
+function legalPage(o: { host: string; title: string; updated: string; intro: string; sections: [string, string[]][]; contactEmail?: string }): string {
+  const body = h`
+<section class="form-head">
+  <p class="eyebrow"><span class="dot"></span>Last updated ${o.updated}</p>
+  <h1 class="display">${o.title}</h1>
+  <p class="lede">${o.intro}</p>
+</section>
+<div class="legal">
+  ${o.sections.map(([heading, paras]) => h`<section><h2>${heading}</h2>${paras.map((p) => h`<p>${p}</p>`)}</section>`)}
+  <section><h2>Contact</h2><p>${o.contactEmail ? h`Questions or requests: <a href="mailto:${o.contactEmail}">${o.contactEmail}</a>.` : "Contact the operator of this Relay."}</p></section>
+</div>`;
+  return layout({ title: `${o.title} · Relay`, body, host: o.host });
+}
+
+export const termsPage = (host: string, contactEmail?: string) =>
+  legalPage({
+    host,
+    contactEmail,
+    title: "Terms of use",
+    updated: "21 November 2026",
+    intro: `These terms cover your use of the Relay service at ${host}. By creating an account, connecting an assistant or creating a form, you agree to them. If you answer a form, the section for respondents applies to you.`,
+    sections: [
+      ["The service is provided as is", [
+        "Relay is provided \"as is\" and \"as available\", without warranties of any kind, express or implied, including fitness for a particular purpose, accuracy, availability or that it will be free of errors.",
+        "To the fullest extent the law allows, the operator of this Relay is not liable for any loss or damage arising from its use or unavailability, including lost data, lost responses, lost profits, downtime, security incidents, or anything done by assistants, integrations or other people with your forms or data.",
+        "Free accounts may be limited, paused, changed or discontinued at any time.",
+      ]],
+      ["Your forms and the data you collect", [
+        "You are responsible for every form you create and for the information you collect with it. You must have a lawful reason to collect it, tell respondents how you will use it, and handle it according to the laws that apply to you.",
+        "Do not use Relay to collect passwords, payment card or bank details, government ID numbers, health information or other sensitive data, and do not use it for spam, phishing, harassment, deception or anything illegal.",
+        "Answers people send through your forms are yours to manage. The operator does not review them and is not responsible for their content or for how you use them.",
+      ]],
+      ["Your account", [
+        "Keep your account key secret. Anyone who has it can manage your forms. Lost keys cannot be recovered.",
+        "Accounts and forms may be suspended or removed, without notice, if they break these terms or put the service or other people at risk.",
+      ]],
+      ["For respondents", [
+        "When you answer a form, your answers go to the person or organisation that created it. They decide how your answers are used; the operator of this Relay does not. Contact the form's creator about your answers.",
+      ]],
+      ["Open source and self-hosted copies", [
+        "Relay is open-source software. Copies that other people run on their own servers are operated by them, not by the operator of this Relay, and these terms do not cover them.",
+      ]],
+      ["Changes", [
+        "These terms may change. The date at the top shows the latest version. Continuing to use Relay after a change means you accept it.",
+      ]],
+    ],
+  });
+
+export const privacyPage = (host: string, contactEmail?: string) =>
+  legalPage({
+    host,
+    contactEmail,
+    title: "Privacy policy",
+    updated: "21 November 2026",
+    intro: `This explains what the Relay service at ${host} stores and why. Relay keeps as little as it can, never calls an AI model with your data, never sells data and shows no ads.`,
+    sections: [
+      ["What is stored", [
+        "Forms: their questions and settings. Responses: the answers people submit. Accounts (hosted mode): an optional name and email, and a one-way hash of the account key (the key itself is never stored).",
+        "Connections: assistants you connect, and their sign-in codes and tokens, stored only as one-way hashes.",
+        "Request logs record the method, page and result of each request, never query strings or answers. Network addresses are used briefly, in memory, to limit abuse, and are not saved with responses.",
+      ]],
+      ["Who controls response data", [
+        "Form creators decide what to collect and how to use it, so they are responsible for their respondents' data. The operator of this Relay stores it on their behalf and does not use it for anything else.",
+      ]],
+      ["Services Relay relies on", [
+        "Hosting runs on Vercel and data is stored in a Turso database. Pages load fonts from Google Fonts, and a form's logo loads from the address its creator chose, so those services can see your network address when you open a page.",
+        "When you use an AI assistant with Relay, that assistant's own privacy terms apply to what you share with it.",
+      ]],
+      ["How long data is kept", [
+        "Forms and responses are kept until the creator or the operator deletes them. Closing a form stops new responses but keeps existing ones.",
+      ]],
+      ["Your choices", [
+        "Ask the operator to delete your account and forms, or a form's creator to delete your answers. Exports and deletions can also be done through your assistant or the API.",
+      ]],
+      ["Security", [
+        "Data is sent over HTTPS, keys and tokens are stored only as hashes, and access to forms is limited to their owner. No system is perfectly secure; see the terms for the limits of responsibility.",
+      ]],
+    ],
+  });
