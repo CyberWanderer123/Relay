@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { requireOwnerKey } from "./routes/api.js";
+import { requireAccount, type AuthEnv } from "./routes/api.js";
+import { OPERATOR } from "./service.js";
 import { clientIp, FORM_ACTION_HEADER, keyMatches, RateLimiter, type Deps } from "./routes/deps.js";
 import { cleanText } from "./schema.js";
 import type { Relay } from "./service.js";
-import { authorizePage, oauthErrorPage } from "./views/pages.js";
+import { accountKeyPage, authorizePage, oauthErrorPage } from "./views/pages.js";
 
 /* OAuth 2.1 for MCP connectors (the MCP authorization spec): Relay is both the protected
    resource (/mcp) and its own authorization server.
@@ -42,30 +43,53 @@ export function validRedirectUri(uri: string): boolean {
   }
 }
 
-/** True for a live access token issued under the current owner key. */
-export async function accessTokenValid(relay: Relay, ownerKey: string | undefined, token: string): Promise<boolean> {
-  if (!ownerKey || !token.startsWith("rly_at_")) return false;
+/**
+ * Fingerprint of an account's current key. Tokens carry it, so a changed key (the operator's
+ * RELAY_OWNER_KEY, or an account key) cuts off every token issued under the old one.
+ */
+async function currentFingerprint(relay: Relay, ownerKey: string | undefined, account: string): Promise<string | null> {
+  if (account === OPERATOR) return ownerKey ? keyFingerprint(ownerKey) : null;
+  const hash = await relay.accountKeyHash(account);
+  return hash ? keyFingerprint(hash) : null;
+}
+
+/** The account a key belongs to: the operator's owner key, or (hosted mode) an account key. */
+async function accountForKey(relay: Relay, ownerKey: string | undefined, key: string): Promise<string | null> {
+  if (ownerKey && keyMatches(key, ownerKey)) return OPERATOR;
+  if (relay.hosted) return (await relay.accountForKey(key))?.id ?? null;
+  return null;
+}
+
+/** The account a live access token acts for, or null. */
+export async function accessTokenAccount(relay: Relay, ownerKey: string | undefined, token: string): Promise<string | null> {
+  if (!ownerKey || !token.startsWith("rly_at_")) return null;
   const grant = await relay.oauthStore.getGrant(sha256(token), "access");
-  if (!grant || Number(grant.expires_at) <= now()) return false;
-  return (JSON.parse(grant.data) as { kf?: string }).kf === keyFingerprint(ownerKey);
+  if (!grant || Number(grant.expires_at) <= now()) return null;
+  const d = JSON.parse(grant.data) as { acc?: string; kf?: string };
+  const account = d.acc ?? OPERATOR;
+  return d.kf && d.kf === (await currentFingerprint(relay, ownerKey, account)) ? account : null;
 }
 
 /**
- * Guard for /mcp: an OAuth access token, or the owner key (Bearer, bare header or ?key=) for
+ * Guard for /mcp: an OAuth access token, or a key (Bearer, bare header or ?key=) for
  * connectors set up before OAuth. A 401 points clients at the metadata so they can start OAuth.
  */
-export function requireMcpAuth({ relay, config }: Deps): MiddlewareHandler {
+export function requireMcpAuth({ relay, config }: Deps): MiddlewareHandler<AuthEnv> {
   const challenge = `Bearer resource_metadata="${protectedResourceMetadataUrl(relay.baseUrl)}", scope="${SCOPE}"`;
-  const ownerKeyGuard = requireOwnerKey(config.ownerKey, true, challenge);
+  const keyGuard = requireAccount({ relay, config }, true, challenge);
   return async (c, next) => {
     const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1]?.trim();
     if (bearer?.startsWith("rly_at_")) {
-      if (await accessTokenValid(relay, config.ownerKey, bearer)) return next();
+      const account = await accessTokenAccount(relay, config.ownerKey, bearer);
+      if (account) {
+        c.set("account", account);
+        return next();
+      }
       console.warn(`auth rejected: ${c.req.method} ${c.req.path} — expired or revoked access token`);
       c.header("WWW-Authenticate", `${challenge}, error="invalid_token"`);
       return c.json({ error: "invalid_token", error_description: "The access token is expired or revoked. Sign in again." }, 401);
     }
-    return ownerKeyGuard(c, next);
+    return keyGuard(c, next);
   };
 }
 
@@ -124,6 +148,7 @@ export function oauthRoutes({ relay, config }: Deps) {
   const base = relay.baseUrl;
   const keyAttempts = new RateLimiter(10, 10 * 60_000);
   const registrations = new RateLimiter(20, 60 * 60_000);
+  const signups = new RateLimiter(5, 60 * 60_000);
 
   // Discovery documents and the endpoints apps call directly may be fetched cross-origin.
   r.use("/.well-known/*", cors);
@@ -218,6 +243,7 @@ export function oauthRoutes({ relay, config }: Deps) {
         redirectHost: new URL(checked.redirect).host,
         params: checked.params,
         error,
+        hosted: relay.hosted ? { monthlyResponses: config.monthlyResponses } : undefined,
       }),
       status,
     );
@@ -246,9 +272,17 @@ export function oauthRoutes({ relay, config }: Deps) {
       return showApproval(c, checked, "Too many attempts. Wait ten minutes and try again.", 401);
     }
     const key = typeof body.owner_key === "string" ? body.owner_key.trim() : "";
-    if (!key || !keyMatches(key, config.ownerKey)) {
-      console.warn("oauth: owner key did not match on the approval page");
-      return showApproval(c, checked, "That key doesn't match this Relay's owner key.", 401);
+    const account = key ? await accountForKey(relay, config.ownerKey, key) : null;
+    if (!account) {
+      console.warn("oauth: key did not match on the approval page");
+      return showApproval(
+        c,
+        checked,
+        relay.hosted
+          ? "That key doesn't match an account here. Use the account key you saved when you signed up, or create a free account below."
+          : "That key doesn't match this Relay's owner key. Use the RELAY_OWNER_KEY from this deployment's settings (on Vercel: Settings → Environment Variables), not the example key on the home page.",
+        401,
+      );
     }
 
     const code = randomToken("rly_code_");
@@ -256,11 +290,28 @@ export function oauthRoutes({ relay, config }: Deps) {
       sha256(code),
       "code",
       checked.client.id,
-      JSON.stringify({ ru: checked.redirect, cc: checked.params.code_challenge, res: resourceUrl(base) }),
+      JSON.stringify({ ru: checked.redirect, cc: checked.params.code_challenge, res: resourceUrl(base), acc: account }),
       now() + CODE_TTL,
       now(),
     );
     return c.redirect(withParams(checked.redirect, { code, state, iss: base }), 302);
+  });
+
+  // Hosted Relay: create a free account from the approval page, show its key once, then continue.
+  r.post("/oauth/signup", bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.html(oauthErrorPage(relay.host, "Request too large."), 413) }), async (c) => {
+    if (!relay.hosted || !config.ownerKey) return c.html(oauthErrorPage(relay.host, "This Relay doesn't offer sign-ups. Its owner connects with the owner key."), 404);
+    const body = await c.req.parseBody();
+    const checked = await checkAuthRequest(relay, pick(body));
+    if (checked.kind === "fatal") return c.html(oauthErrorPage(relay.host, checked.message), 400);
+    if (checked.kind === "redirect-error") return c.redirect(withParams(checked.redirect, { error: checked.error, error_description: checked.description, state: checked.state, iss: base }), 302);
+    if (!signups.take(clientIp(c, config.trustProxy))) return showApproval(c, checked, "Too many new accounts from your network. Try again in an hour.", 401);
+    const email = typeof body.email === "string" ? body.email.trim() : "";
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return showApproval(c, checked, "That email address doesn't look right. Leave it empty if you prefer.", 401);
+    const account = await relay.createAccount({ name: typeof body.name === "string" ? body.name : undefined, email: email || undefined });
+    // The key page posts to /oauth/authorize, which then redirects to the app.
+    c.header(FORM_ACTION_HEADER, new URL(checked.redirect).origin);
+    c.header("Cache-Control", "no-store");
+    return c.html(accountKeyPage({ host: relay.host, clientName: checked.client.name, key: account.key, params: checked.params }));
   });
 
   // Token endpoint: exchange a code (with its PKCE verifier) or a refresh token for tokens.
@@ -270,10 +321,12 @@ export function oauthRoutes({ relay, config }: Deps) {
     const client = await authenticateClient(c, relay, body);
     if (!client) return tokenError(c, 401, "invalid_client", "Unknown app, or wrong client secret.");
 
-    const issue = async () => {
+    const issue = async (account: string) => {
+      const kf = await currentFingerprint(relay, config.ownerKey, account);
+      if (!kf) return tokenError(c, 400, "invalid_grant", "This account no longer exists. Sign in again.");
       const access = randomToken("rly_at_");
       const refresh = randomToken("rly_rt_");
-      const data = JSON.stringify({ kf: keyFingerprint(config.ownerKey!), res: resourceUrl(base) });
+      const data = JSON.stringify({ acc: account, kf, res: resourceUrl(base) });
       await relay.oauthStore.insertGrant(sha256(access), "access", client.id, data, now() + ACCESS_TTL, now());
       await relay.oauthStore.insertGrant(sha256(refresh), "refresh", client.id, data, now() + REFRESH_TTL, now());
       c.header("Cache-Control", "no-store");
@@ -288,24 +341,30 @@ export function oauthRoutes({ relay, config }: Deps) {
       if (!grant || grant.client_id !== client.id || Number(grant.expires_at) <= now()) {
         return tokenError(c, 400, "invalid_grant", "The code is invalid, expired or already used.");
       }
-      const d = JSON.parse(grant.data) as { ru: string; cc: string; res: string };
+      const d = JSON.parse(grant.data) as { ru: string; cc: string; res: string; acc?: string };
       if (redirect_uri !== d.ru) return tokenError(c, 400, "invalid_grant", "redirect_uri doesn't match the authorization request.");
       if (!/^[A-Za-z0-9._~-]{43,128}$/.test(code_verifier) || crypto.createHash("sha256").update(code_verifier).digest("base64url") !== d.cc) {
         return tokenError(c, 400, "invalid_grant", "The PKCE code_verifier doesn't match.");
       }
       if (resource && resource !== d.res && resource !== base) return tokenError(c, 400, "invalid_target", "Tokens are only issued for this server's /mcp endpoint.");
-      return issue();
+      return issue(d.acc ?? OPERATOR);
     }
 
     if (body.grant_type === "refresh_token") {
       if (!body.refresh_token) return tokenError(c, 400, "invalid_request", "refresh_token is required.");
       // Refresh tokens rotate: the old one is consumed whether or not the new pair is issued.
       const grant = await relay.oauthStore.takeGrant(sha256(body.refresh_token), "refresh");
-      const d = grant ? (JSON.parse(grant.data) as { kf?: string }) : undefined;
-      if (!grant || grant.client_id !== client.id || Number(grant.expires_at) <= now() || d?.kf !== keyFingerprint(config.ownerKey)) {
+      const d = grant ? (JSON.parse(grant.data) as { acc?: string; kf?: string }) : undefined;
+      const account = d?.acc ?? OPERATOR;
+      if (
+        !grant ||
+        grant.client_id !== client.id ||
+        Number(grant.expires_at) <= now() ||
+        d?.kf !== (await currentFingerprint(relay, config.ownerKey, account))
+      ) {
         return tokenError(c, 400, "invalid_grant", "The refresh token is invalid, expired or revoked. Sign in again.");
       }
-      return issue();
+      return issue(account);
     }
 
     return tokenError(c, 400, "unsupported_grant_type", "Use authorization_code or refresh_token.");

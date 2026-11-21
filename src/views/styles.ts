@@ -467,6 +467,17 @@ pre.code .c { color: var(--muted); }
 .setup-step p { margin: 0; color: var(--text-2); font-size: 15px; }
 .setup-step .btn { justify-self: start; }
 .keybox { display: block; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); font: 500 14px/1.4 var(--mono); color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.signup { display: grid; gap: 10px; margin-bottom: 14px; }
+.signup-form { display: grid; gap: 10px; }
+.signup-form .btn { justify-self: start; }
+.or { margin: 8px 0 12px; font-size: 15px; font-weight: 600; color: var(--text-2); }
+.saved-check { margin: 14px 0 0; }
+.hosted-start { margin-bottom: 28px; }
+.setup-step.featured { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.own-title { margin: 0 0 14px; font-size: 20px; }
+.keygen { display: grid; gap: 10px; }
+.keygen summary { cursor: pointer; font-size: 15px; font-weight: 500; color: var(--primary); }
+.keygen[open] summary { margin-bottom: 4px; }
 .prompts { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--text-2); font-size: 15px; }
 
 /* ---------- landing: developers ---------- */

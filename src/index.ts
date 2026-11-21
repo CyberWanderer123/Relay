@@ -8,7 +8,7 @@ import { createRelay } from "./service.js";
 const config = loadConfig();
 assertDurableDb(config);
 
-const relay = createRelay(openDb(config.dbUrl, config.dbAuthToken), config.baseUrl);
+const relay = createRelay(openDb(config.dbUrl, config.dbAuthToken), config.baseUrl, { hosted: config.hosted, monthlyResponses: config.monthlyResponses, contactEmail: config.contactEmail });
 const app = createApp(relay, config);
 
 export default app;

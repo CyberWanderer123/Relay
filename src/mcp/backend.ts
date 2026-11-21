@@ -1,6 +1,6 @@
 import { RelayError } from "../errors.js";
 import { makeExportLink } from "../routes/export.js";
-import type { Relay, ShareOptions } from "../service.js";
+import { OPERATOR, type Relay, type ShareOptions } from "../service.js";
 
 /* The MCP tools add no logic of their own: they call one of these backends,
    which are both thin doors onto the same creator API. */
@@ -18,17 +18,18 @@ export interface Backend {
 }
 
 /** Calls the service in-process — used by /mcp and by stdio when it owns the database. */
-export function localBackend(relay: Relay, ownerKey?: string): Backend {
+/** `owner` is the account the tools act for: the operator by default, or a hosted account. */
+export function localBackend(relay: Relay, ownerKey?: string, owner: string = OPERATOR): Backend {
   return {
-    createForm: (input, share) => relay.createForm(input, share),
-    listForms: () => relay.listForms(),
-    getForm: (id, share) => relay.getForm(id, share),
-    updateForm: (id, input) => relay.updateForm(id, input),
-    getResponses: (id, opts) => relay.getResponses(id, opts),
-    summarize: (id) => relay.summarize(id),
-    closeForm: (id) => relay.closeForm(id),
+    createForm: (input, share) => relay.createForm(input, share, owner),
+    listForms: () => relay.listForms(owner),
+    getForm: (id, share) => relay.getForm(id, share, owner),
+    updateForm: (id, input) => relay.updateForm(id, input, owner),
+    getResponses: (id, opts) => relay.getResponses(id, opts, owner),
+    summarize: (id) => relay.summarize(id, owner),
+    closeForm: (id) => relay.closeForm(id, owner),
     exportLink: async (id) => {
-      const out = await relay.exportResponses(id);
+      const out = await relay.exportResponses(id, owner);
       return { ...makeExportLink(relay.baseUrl, ownerKey, id), filename: out.filename, response_count: out.count };
     },
   };

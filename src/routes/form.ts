@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { closedPage, errorPage, formPage, notFoundPage, rateLimitedPage, thanksPage } from "../views/pages.js";
 import { renderClean, renderClosedClean } from "../clean.js";
 import { sendResponseWebhook } from "../webhook.js";
-import type { StoredForm } from "../service.js";
+import { OPERATOR, type StoredForm } from "../service.js";
 import { clientIp, FRAME_ANCESTORS_HEADER, RateLimiter, toRaw, type Deps } from "./deps.js";
 
 /** True when the client prefers text/plain or text/markdown to HTML (browsers always list text/html first). */
@@ -76,7 +76,10 @@ export function formRoutes({ relay, config }: Deps) {
         return c.html(formPage({ form, links: relay.links(form.id), host, values: raw, errors: result.errors, spotsLeft: await relay.spotsLeft(form), embed }), 422);
       }
       // Awaited (with a 3-second cap) because serverless functions may stop once the response is sent.
-      await sendResponseWebhook(config, result.form, { id: result.response_id, submitted_at: result.submitted_at, answers: result.answers });
+      // On a hosted Relay the webhook belongs to the operator, so only the operator's forms use it.
+      if (!config.hosted || result.form.owner === OPERATOR) {
+        await sendResponseWebhook(config, result.form, { id: result.response_id, submitted_at: result.submitted_at, answers: result.answers });
+      }
       return c.redirect(thanks, 303);
     },
   );

@@ -64,7 +64,8 @@ Returns the form id, links.fill (the one link to share: the page also lets peopl
     async ({ channel: ch, intro: it, ...definition }) =>
       run(async () => {
         const r = await backend.createForm(definition, { channel: ch, intro: it });
-        return `Form created. Show the creator this share message so they can send it:\n\n${r.share_message}\n\nDetails:\n${json(r)}`;
+        const usageNotice = r.usage.notice ? `\n\nNOTICE FOR THE CREATOR: ${r.usage.notice}` : "";
+        return `Form created. Show the creator this share message so they can send it:\n\n${r.share_message}${usageNotice}\n\nDetails:\n${json(r)}`;
       }),
   );
 
@@ -80,7 +81,8 @@ Use this to find a form's id when the creator refers to a form by name, or to gi
     async () =>
       run(async () => {
         const r = await backend.listForms();
-        return r.forms.length ? json(r) : "There are no forms yet. Use create_form to make one.";
+        const notice = r.usage.notice ? `NOTICE FOR THE CREATOR: ${r.usage.notice}\n\n` : "";
+        return notice + (r.forms.length ? json(r) : "There are no forms yet. Use create_form to make one.");
       }),
   );
 
@@ -93,7 +95,11 @@ Use this to re-share an existing form (optionally with a different channel or op
       inputSchema: { form_id: formId, channel, intro },
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ form_id, channel: ch, intro: it }) => run(async () => json(await backend.getForm(form_id, { channel: ch, intro: it }))),
+    async ({ form_id, channel: ch, intro: it }) =>
+      run(async () => {
+        const r = await backend.getForm(form_id, { channel: ch, intro: it });
+        return (r.usage.notice ? `NOTICE FOR THE CREATOR: ${r.usage.notice}\n\n` : "") + json(r);
+      }),
   );
 
   server.registerTool(

@@ -16,6 +16,7 @@ const SCHEMA = [
     description TEXT,
     fields      TEXT NOT NULL,              -- JSON array of field objects
     settings    TEXT,                       -- JSON object: thank_you, closes_at, max_responses
+    owner_id    TEXT,                       -- account that owns the form; null means the operator ("owner")
     status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
     created_at  INTEGER NOT NULL            -- unix seconds
   )`,
@@ -27,6 +28,15 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS responses_by_form ON responses (form_id)`,
   // The newest response (by rowid) the creator has been shown, per form. Powers "new since last check".
+  // Accounts on a hosted Relay. The operator (RELAY_OWNER_KEY) is the implicit account "owner".
+  `CREATE TABLE IF NOT EXISTS accounts (
+    id         TEXT PRIMARY KEY,
+    name       TEXT,
+    email      TEXT,
+    key_hash   TEXT NOT NULL UNIQUE,        -- sha256 of the account key; the key itself is shown once
+    plan       TEXT NOT NULL DEFAULT 'free',
+    created_at INTEGER NOT NULL
+  )`,
   // OAuth for MCP connectors: registered apps, and their codes and tokens (stored as SHA-256 hashes only).
   `CREATE TABLE IF NOT EXISTS oauth_clients (
     id            TEXT PRIMARY KEY,
@@ -62,6 +72,7 @@ export interface FormRow {
   description: string | null;
   fields: string;
   settings: string | null;
+  owner_id: string | null;
   status: "open" | "closed";
   created_at: number;
 }
@@ -92,6 +103,11 @@ export function makeQueries(db: DB) {
       // Columns added after the first release. CREATE TABLE IF NOT EXISTS leaves old tables as they
       // were, so add what is missing. Two cold starts may race; "duplicate column" means it is done.
       const cols = (await db.execute("PRAGMA table_info(forms)")).rows.map((r) => String(r.name));
+      if (!cols.includes("owner_id")) {
+        await db.execute("ALTER TABLE forms ADD COLUMN owner_id TEXT").catch((e: Error) => {
+          if (!/duplicate column/i.test(e.message)) throw e;
+        });
+      }
       if (!cols.includes("settings")) {
         await db.execute("ALTER TABLE forms ADD COLUMN settings TEXT").catch((e: Error) => {
           if (!/duplicate column/i.test(e.message)) throw e;
@@ -115,27 +131,57 @@ export function makeQueries(db: DB) {
     init,
 
     insertForm: (row: Omit<FormRow, "status">) =>
-      run(`INSERT INTO forms (id, title, description, fields, settings, status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)`, [
+      run(`INSERT INTO forms (id, title, description, fields, settings, owner_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'open', ?)`, [
         row.id,
         row.title,
         row.description,
         row.fields,
         row.settings,
+        row.owner_id,
         row.created_at,
       ]),
 
     getForm: (id: string) =>
-      one<FormRow>(`SELECT id, title, description, fields, settings, status, created_at FROM forms WHERE id = ?`, [id]),
+      one<FormRow>(`SELECT id, title, description, fields, settings, owner_id, status, created_at FROM forms WHERE id = ?`, [id]),
 
-    listForms: () =>
+    listForms: (owner: string) =>
       all<FormListRow>(
         `SELECT f.id, f.title, f.status, f.settings, f.created_at,
                 (SELECT COUNT(*) FROM responses r WHERE r.form_id = f.id) AS response_count,
                 (SELECT COUNT(*) FROM responses r WHERE r.form_id = f.id
                     AND r.rowid > COALESCE((SELECT last_seq FROM form_reads WHERE form_id = f.id), 0)) AS new_count
            FROM forms f
+          WHERE COALESCE(f.owner_id, 'owner') = ?
           ORDER BY f.created_at DESC, f.rowid DESC`,
+        [owner],
       ),
+
+    /** Responses an account's forms received since a moment (unix seconds), for the monthly limit. */
+    responsesSince: async (owner: string, since: number) =>
+      Number(
+        (
+          await one<{ n: number }>(
+            `SELECT COUNT(*) AS n FROM responses r JOIN forms f ON f.id = r.form_id
+              WHERE COALESCE(f.owner_id, 'owner') = ? AND r.submitted_at >= ?`,
+            [owner, since],
+          )
+        )?.n ?? 0,
+      ),
+
+    insertAccount: (row: { id: string; name: string | null; email: string | null; key_hash: string; created_at: number }) =>
+      run(`INSERT INTO accounts (id, name, email, key_hash, plan, created_at) VALUES (?, ?, ?, ?, 'free', ?)`, [
+        row.id,
+        row.name,
+        row.email,
+        row.key_hash,
+        row.created_at,
+      ]),
+
+    accountByKeyHash: (hash: string) =>
+      one<{ id: string; name: string | null; email: string | null; plan: string }>(`SELECT id, name, email, plan FROM accounts WHERE key_hash = ?`, [hash]),
+
+    accountById: (id: string) =>
+      one<{ id: string; name: string | null; email: string | null; plan: string; key_hash: string }>(`SELECT id, name, email, plan, key_hash FROM accounts WHERE id = ?`, [id]),
 
     stats: async (formId: string) =>
       (await one<{ n: number; first: number | null; last: number | null }>(

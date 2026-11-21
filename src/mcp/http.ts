@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { requireMcpAuth } from "../oauth.js";
+import type { AuthEnv } from "../routes/api.js";
 import type { Deps } from "../routes/deps.js";
 import { localBackend } from "./backend.js";
 import { createMcpServer } from "./tools.js";
@@ -17,8 +18,7 @@ import { createMcpServer } from "./tools.js";
  * stream — whereas an open stream would hang a serverless function until timeout.
  */
 export function mcpRoutes({ relay, config }: Deps) {
-  const r = new Hono();
-  const backend = localBackend(relay, config.ownerKey);
+  const r = new Hono<AuthEnv>();
 
   const notAllowed = () =>
     new Response(
@@ -33,7 +33,8 @@ export function mcpRoutes({ relay, config }: Deps) {
     requireMcpAuth({ relay, config }),
     bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }),
     async (c) => {
-      const server = createMcpServer(backend);
+      // Tools act for the account the request signed in as.
+      const server = createMcpServer(localBackend(relay, config.ownerKey, c.get("account")));
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

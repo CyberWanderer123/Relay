@@ -16,6 +16,12 @@ export interface Config {
   webhookUrl?: string;
   /** Optional secret; when set, webhook calls carry an X-Relay-Signature HMAC of the body. */
   webhookSecret?: string;
+  /** Hosted mode: anyone can create an account; free accounts get a monthly response limit. */
+  hosted: boolean;
+  /** Free accounts' responses per calendar month (UTC) in hosted mode. */
+  monthlyResponses: number;
+  /** Shown to people who reach the free limit, e.g. you@example.com. */
+  contactEmail?: string;
   /** Running on Vercel (set by the platform). */
   onVercel: boolean;
 }
@@ -57,6 +63,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     submitPerMinute: Number(env.RELAY_SUBMIT_PER_MINUTE ?? 10),
     webhookUrl: env.RELAY_WEBHOOK_URL?.trim() || undefined,
     webhookSecret: env.RELAY_WEBHOOK_SECRET?.trim() || undefined,
+    hosted: flag(env.RELAY_HOSTED, false),
+    monthlyResponses: Math.max(1, Number(env.RELAY_MONTHLY_RESPONSES ?? 250) || 250),
+    contactEmail: env.RELAY_CONTACT_EMAIL?.trim() || undefined,
     onVercel,
   };
 }

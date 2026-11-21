@@ -189,6 +189,9 @@ Creator API (Bearer key): `POST /api/forms` · `GET /api/forms` · `GET /api/for
 | --- | --- | --- |
 | `RELAY_BASE_URL` | `http://localhost:8787` (on Vercel: the production domain) | Public origin used in every link |
 | `RELAY_OWNER_KEY` | — | Creator key; `/api` and `/mcp` are disabled without it |
+| `RELAY_HOSTED` | off | Hosted mode: anyone can create a free account on the Allow page when connecting an assistant. Off means one owner (you) |
+| `RELAY_MONTHLY_RESPONSES` | `250` | Hosted mode: responses a free account's forms can take per calendar month (UTC) before they pause |
+| `RELAY_CONTACT_EMAIL` | — | Hosted mode: shown to people who reach the free limit |
 | `RELAY_WEBHOOK_URL` | — | Optional. Receives a JSON `POST` (`event: "response.created"`) for every new response |
 | `RELAY_WEBHOOK_SECRET` | — | Optional. Signs webhook bodies: `X-Relay-Signature: sha256=<HMAC-SHA256 of the body>` |
 | `TURSO_DATABASE_URL` (or `RELAY_DB_URL`) | `file:./data/relay.db` | `libsql://…` for Turso, `file:…` for a local SQLite file |
@@ -207,6 +210,16 @@ Creator API (Bearer key): `POST /api/forms` · `GET /api/forms` · `GET /api/for
 - The review page shows every answer and the destination domain before Submit.
 - `Referrer-Policy: no-referrer`; request logs record method, path and status only — never query strings, since review links carry answers.
 - Submissions are rate-limited per IP, bodies are capped at 32 KB, answers are capped per field, unknown field ids are rejected, and a hidden honeypot field drops bots.
+
+## Hosting Relay for other people
+
+Set `RELAY_HOSTED=1` to let anyone use your Relay with a free account:
+
+- **Sign-up happens while connecting.** Someone adds `https://<your-relay>/mcp` as a connector; on Relay's Allow page they choose **Create a free account**, get an account key (shown once, stored only as a hash), and continue. They sign in again later with that key.
+- **Accounts are separate.** Each account sees and manages only its own forms, through MCP and the API. Respondents reach any form by its link, as before.
+- **Free monthly limit.** A free account's forms take `RELAY_MONTHLY_RESPONSES` (default 250) responses per calendar month in total. At the limit they pause until the 1st: respondents see a polite notice, and the creator's assistant is told to run their own Relay or email `RELAY_CONTACT_EMAIL`. The account gets a warning at 80%.
+- **You stay unlimited.** Your `RELAY_OWNER_KEY` is the operator account: no limit, and your existing forms are yours.
+- **Your webhook stays yours.** `RELAY_WEBHOOK_URL` only receives responses to your own forms, never other accounts'.
 
 ## Your data duties
 

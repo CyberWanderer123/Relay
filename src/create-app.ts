@@ -77,6 +77,7 @@ export function createApp(relay: Relay, config: Config) {
         baseUrl: relay.baseUrl,
         ownerConfigured: Boolean(config.ownerKey),
         suggestedKey: crypto.randomBytes(24).toString("base64url"),
+        hosted: config.hosted ? { monthlyResponses: config.monthlyResponses, contactEmail: config.contactEmail } : undefined,
       }),
     );
   });

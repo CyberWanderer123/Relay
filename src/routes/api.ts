@@ -1,41 +1,54 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { RelayError } from "../errors.js";
-import type { ShareOptions } from "../service.js";
+import { OPERATOR, type ShareOptions } from "../service.js";
 import { keyMatches, type Deps } from "./deps.js";
 import { csvResponse, makeExportLink } from "./export.js";
 
+/** Request variables set by the auth guards: the account a request acts for. */
+export type AuthEnv = { Variables: { account: string } };
+
 /**
- * Owner-key guard shared by /api and /mcp.
+ * Key guard shared by /api and /mcp. Resolves the account a key belongs to:
+ * the operator's RELAY_OWNER_KEY, or (in hosted mode) an account key.
  * Accepts `Authorization: Bearer <key>`, a bare `Authorization: <key>` (connector screens send
- * header values exactly as typed, and the "Bearer " prefix is easy to forget), and — when
- * `allowQueryKey` is set — `?key=<key>` for connectors that can only take a URL.
- * Rejections are logged with a reason, never with the presented value.
+ * header values exactly as typed), and — when `allowQueryKey` is set — `?key=<key>` for
+ * connectors that can only take a URL. Rejections are logged with a reason, never the value.
  */
-export function requireOwnerKey(
-  ownerKey: string | undefined,
+export function requireAccount(
+  { relay, config }: Deps,
   allowQueryKey = false,
   challenge = 'Bearer realm="relay"',
-): MiddlewareHandler {
+): MiddlewareHandler<AuthEnv> {
   return async (c, next) => {
-    if (!ownerKey) return c.json({ error: "The creator API is disabled. Set RELAY_OWNER_KEY to enable it." }, 503);
+    if (!config.ownerKey) return c.json({ error: "The creator API is disabled. Set RELAY_OWNER_KEY to enable it." }, 503);
 
     const header = (c.req.header("authorization") ?? "").trim();
     const bearer = /^Bearer\s+(.+)$/i.exec(header)?.[1]?.trim();
     const query = allowQueryKey ? c.req.query("key")?.trim() : undefined;
     const candidates = [bearer ?? header, query].filter((v): v is string => Boolean(v));
 
-    if (!candidates.some((v) => keyMatches(v, ownerKey))) {
-      const reason = !candidates.length
-        ? "no key sent"
-        : header && !bearer && !query
-          ? "Authorization header without 'Bearer ' did not match"
-          : "key did not match";
-      console.warn(`auth rejected: ${c.req.method} ${c.req.path} — ${reason}`);
-      c.header("WWW-Authenticate", challenge);
-      return c.json({ error: "Unauthorized. Send the owner key as 'Authorization: Bearer <key>'." }, 401);
+    if (candidates.some((v) => keyMatches(v, config.ownerKey!))) {
+      c.set("account", OPERATOR);
+      return next();
     }
-    await next();
+    if (relay.hosted) {
+      for (const v of candidates) {
+        const account = await relay.accountForKey(v);
+        if (account) {
+          c.set("account", account.id);
+          return next();
+        }
+      }
+    }
+    const reason = !candidates.length
+      ? "no key sent"
+      : header && !bearer && !query
+        ? "Authorization header without 'Bearer ' did not match"
+        : "key did not match";
+    console.warn(`auth rejected: ${c.req.method} ${c.req.path} — ${reason}`);
+    c.header("WWW-Authenticate", challenge);
+    return c.json({ error: "Unauthorized. Send your key as 'Authorization: Bearer <key>'." }, 401);
   };
 }
 
@@ -46,8 +59,8 @@ function shareOptions(q: (k: string) => string | undefined): ShareOptions {
 
 /** The creator API. Every route needs the owner key. */
 export function apiRoutes({ relay, config }: Deps) {
-  const r = new Hono();
-  r.use("/api/*", requireOwnerKey(config.ownerKey));
+  const r = new Hono<AuthEnv>();
+  r.use("/api/*", requireAccount({ relay, config }));
   r.use("/api/*", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }));
 
   r.post("/api/forms", async (c) => {
@@ -59,12 +72,12 @@ export function apiRoutes({ relay, config }: Deps) {
     }
     const { channel, intro, ...definition } = body;
     const share = shareOptions((k) => (k === "channel" ? (channel as string) : (intro as string)));
-    return c.json(await relay.createForm(definition, share), 201);
+    return c.json(await relay.createForm(definition, share, c.get("account")), 201);
   });
 
-  r.get("/api/forms", async (c) => c.json(await relay.listForms()));
+  r.get("/api/forms", async (c) => c.json(await relay.listForms(c.get("account"))));
 
-  r.get("/api/forms/:id", async (c) => c.json(await relay.getForm(c.req.param("id"), shareOptions((k) => c.req.query(k)))));
+  r.get("/api/forms/:id", async (c) => c.json(await relay.getForm(c.req.param("id"), shareOptions((k) => c.req.query(k)), c.get("account"))));
 
   // Replace the title, description and questions. Same body as POST /api/forms.
   r.put("/api/forms/:id", async (c) => {
@@ -74,7 +87,7 @@ export function apiRoutes({ relay, config }: Deps) {
     } catch {
       throw new RelayError(400, "Send the form as a JSON body.");
     }
-    return c.json(await relay.updateForm(c.req.param("id"), body));
+    return c.json(await relay.updateForm(c.req.param("id"), body, c.get("account")));
   });
 
   r.get("/api/forms/:id/responses", async (c) => {
@@ -85,28 +98,28 @@ export function apiRoutes({ relay, config }: Deps) {
         limit: limit ? Number(limit) : undefined,
         cursor: c.req.query("cursor") ?? null,
         onlyNew: onlyNew === "1" || onlyNew === "true",
-      }),
+      }, c.get("account")),
     );
   });
 
   r.get("/api/forms/:id/responses.csv", async (c) => {
-    const out = await relay.exportResponses(c.req.param("id"));
+    const out = await relay.exportResponses(c.req.param("id"), c.get("account"));
     return csvResponse(out.csv, out.filename);
   });
 
   // A download link that works without the key for 15 minutes — for agents that hand the creator a link.
   r.post("/api/forms/:id/export-link", async (c) => {
-    const out = await relay.exportResponses(c.req.param("id"));
+    const out = await relay.exportResponses(c.req.param("id"), c.get("account"));
     return c.json({ ...makeExportLink(relay.baseUrl, config.ownerKey, c.req.param("id")), filename: out.filename, response_count: out.count });
   });
 
-  r.get("/api/forms/:id/summary", async (c) => c.json(await relay.summarize(c.req.param("id"))));
+  r.get("/api/forms/:id/summary", async (c) => c.json(await relay.summarize(c.req.param("id"), c.get("account"))));
 
-  r.post("/api/forms/:id/close", async (c) => c.json(await relay.closeForm(c.req.param("id"))));
+  r.post("/api/forms/:id/close", async (c) => c.json(await relay.closeForm(c.req.param("id"), c.get("account"))));
 
   // Permanent deletion of a form and its responses — for the host's data duties.
   // Deliberately not exposed as an MCP tool.
-  r.delete("/api/forms/:id", async (c) => c.json(await relay.deleteForm(c.req.param("id"))));
+  r.delete("/api/forms/:id", async (c) => c.json(await relay.deleteForm(c.req.param("id"), c.get("account"))));
 
   return r;
 }

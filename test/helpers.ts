@@ -12,7 +12,7 @@ export function setup(overrides: Partial<ReturnType<typeof loadConfig>> = {}) {
     ...overrides,
   };
   const db = openDb(":memory:");
-  const relay = createRelay(db, config.baseUrl);
+  const relay = createRelay(db, config.baseUrl, { hosted: config.hosted, monthlyResponses: config.monthlyResponses, contactEmail: config.contactEmail });
   const app = createApp(relay, config);
   return { app, relay, db, config };
 }

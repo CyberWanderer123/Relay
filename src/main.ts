@@ -9,7 +9,7 @@ import { createRelay } from "./service.js";
 loadDotEnv();
 const config = loadConfig();
 const db = openDb(config.dbUrl, config.dbAuthToken);
-const relay = createRelay(db, config.baseUrl);
+const relay = createRelay(db, config.baseUrl, { hosted: config.hosted, monthlyResponses: config.monthlyResponses, contactEmail: config.contactEmail });
 
 try {
   await relay.ready();

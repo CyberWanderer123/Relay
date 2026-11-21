@@ -371,13 +371,15 @@ export const closedPage = (host: string, form: StoredForm, embed = false) =>
     look: look(form, embed),
     host,
     title: `Closed · ${form.title}`,
-    eyebrow: form.closed_reason === "full" ? "Form full" : "Form closed",
-    heading: form.closed_reason === "full" ? "All spots are taken." : "This form is closed.",
+    eyebrow: form.closed_reason === "full" ? "Form full" : form.closed_reason === "paused" ? "Paused" : "Form closed",
+    heading: form.closed_reason === "full" ? "All spots are taken." : form.closed_reason === "paused" ? "Not taking responses right now." : "This form is closed.",
     lede:
       form.closed_reason === "deadline" && form.settings.closes_at
         ? h`“${form.title}” stopped accepting responses on ${formatInstant(form.settings.closes_at)}.`
         : form.closed_reason === "full"
           ? h`“${form.title}” has reached its limit of ${String(form.settings.max_responses)} responses.`
+          : form.closed_reason === "paused"
+            ? h`“${form.title}” has paused for now. Please try again later, or let the person who sent it know.`
           : h`“${form.title}” is no longer accepting responses.`,
     icon: icons.lock,
     tone: "neutral",
@@ -420,7 +422,14 @@ export const DEPLOY_URL =
   "&envDescription=" + encodeURIComponent("Your owner key (any long random secret) and your Turso database URL and token") +
   "&envLink=" + encodeURIComponent(REPO_URL + "#deploy-to-vercel--turso-recommended");
 
-export function homePage(o: { host: string; baseUrl: string; ownerConfigured: boolean; suggestedKey: string }): string {
+export function homePage(o: {
+  host: string;
+  baseUrl: string;
+  ownerConfigured: boolean;
+  suggestedKey: string;
+  /** Hosted Relay: anyone can use it with a free account. */
+  hosted?: { monthlyResponses: number; contactEmail?: string };
+}): string {
   const body = h`
 <section class="hero hero-grid">
   <div>
@@ -531,11 +540,28 @@ export function homePage(o: { host: string; baseUrl: string; ownerConfigured: bo
 <section class="start" id="start">
   <div class="understand-head">
     <p class="eyebrow"><span class="dot"></span>Get started</p>
-    <h2>Run your own Relay in a few minutes.</h2>
-    <p>Each Relay belongs to one person: its owner. You deploy your own copy, keep its owner key, and connect your assistant to it. It's free to run.</p>
+    ${
+      o.hosted
+        ? h`<h2>Start in a minute.</h2>
+    <p>Use Relay right here with a free account, or run your own copy with no limits. Either way, you connect your assistant and ask for a form.</p>`
+        : h`<h2>Run your own Relay in a few minutes.</h2>
+    <p>Each Relay belongs to one person: its owner. You deploy your own copy, keep its owner key, and connect your assistant to it. It's free to run.</p>`
+    }
   </div>
   ${
-    o.ownerConfigured
+    o.hosted
+      ? h`<div class="hosted-start">
+    <div class="setup-step card featured">
+      <span class="q-num">Free · no setup</span>
+      <h3>Use Relay right here</h3>
+      <p>Add this address as a connector in Claude (<b>Customize → Connectors → Add custom connector</b>), ChatGPT or any MCP client:</p>
+      <code class="keybox">${o.baseUrl}/mcp</code>
+      <p>When Relay's Allow page opens, choose <b>Create a free account</b>. Free includes ${String(o.hosted.monthlyResponses)} responses a month across all your forms.</p>
+      <p class="fine">Need more? Run your own Relay below: it's free and has no limits${o.hosted.contactEmail ? h`, or email <a href="mailto:${o.hosted.contactEmail}">${o.hosted.contactEmail}</a>` : ""}.</p>
+    </div>
+  </div>
+  <h3 class="own-title">Or run your own Relay: free, no limits</h3>`
+      : o.ownerConfigured
       ? h`<div class="notice">${icons.info}<div><p><strong>This Relay, <span class="host">${o.host}</span>, belongs to its owner.</strong></p><p>If it's yours, skip to step 3. If not, deploy your own copy: it takes a few minutes.</p></div></div>`
       : h`<div class="notice warn">${icons.alert}<div><p><strong>This Relay isn't set up yet.</strong></p><p>Add an owner key (step 2) as <span class="mono">RELAY_OWNER_KEY</span> in this deployment's settings, then redeploy.</p></div></div>`
   }
@@ -549,10 +575,18 @@ export function homePage(o: { host: string; baseUrl: string; ownerConfigured: bo
     </li>
     <li class="setup-step card">
       <span class="q-num">02 — Owner key</span>
-      <h3>Choose your owner key</h3>
-      <p>The owner key is the password to your Relay. Here is a random one, made just now for you and not stored anywhere:</p>
-      <code class="keybox">${o.suggestedKey}</code>
-      <p class="fine">Use it as <span class="mono">RELAY_OWNER_KEY</span> and keep it secret: anyone who has it can manage your forms. Lost it? Set a new one and redeploy; connected assistants simply sign in again.</p>
+      <h3>Pick a key for your new Relay</h3>
+      <p>The owner key is the password to your Relay. You make it up when you deploy and set it as <span class="mono">RELAY_OWNER_KEY</span>; you'll paste it when you connect an assistant.</p>
+      ${
+        o.ownerConfigured
+          ? h`<details class="keygen"><summary>Setting up a new Relay? Generate a key for it</summary>
+        <code class="keybox">${o.suggestedKey}</code>
+        <p class="fine">A random key for a <b>new</b> deployment, made just now and not stored anywhere. It is <b>not</b> the key of this Relay and won't work here.</p>
+      </details>`
+          : h`<p class="fine">Here is a random one, made just now and not stored anywhere:</p>
+      <code class="keybox">${o.suggestedKey}</code>`
+      }
+      <p class="fine">Keep it secret: anyone who has it can manage your forms. Forgot it? It's in your host's settings (on Vercel: Settings → Environment Variables). Set a new one and redeploy to cut every connected assistant off.</p>
     </li>
     <li class="setup-step card">
       <span class="q-num">03 — Connect</span>
@@ -602,13 +636,20 @@ export function authorizePage(o: {
   redirectHost: string;
   params: Record<string, string | undefined>;
   error?: string;
+  /** Hosted Relay: people sign in with their own account key, or create a free account. */
+  hosted?: { monthlyResponses: number };
 }): string {
   const app = o.clientName || "An app";
   const hidden = Object.entries(o.params).filter(([, v]) => v !== undefined) as [string, string][];
+  const hiddenInputs = hidden.map(([k, v]) => h`<input type="hidden" name="${k}" value="${v}">`);
+  const keyHelp = o.hosted
+    ? h`<p class="fine">The account key you saved when you signed up. It isn't shared with ${app}; the app gets its own token instead.</p>`
+    : h`<p class="fine">It's the <span class="mono">RELAY_OWNER_KEY</span> you set when you deployed <span class="mono">${o.host}</span>. It isn't shared with ${app}; the app gets its own token instead.</p>
+    <p class="fine">Not your Relay? You need your own: <a href="/#start">set one up in a few minutes</a>.</p>`;
   const body = h`
 <section class="form-head">
   <p class="eyebrow"><span class="dot"></span>Connect an assistant</p>
-  <h1 class="display">Allow <em>${app}</em> to use your Relay?</h1>
+  <h1 class="display">Allow <em>${app}</em> to use ${o.hosted ? "Relay" : "your Relay"}?</h1>
   <p class="lede">It will be able to create, edit, read and close your forms, read responses and export them. It can't delete anything.</p>
 </section>
 ${o.error ? h`<div class="notice error" role="alert">${icons.alert}<div><p><strong>${o.error}</strong></p></div></div>` : ""}
@@ -616,20 +657,60 @@ ${o.error ? h`<div class="notice error" role="alert">${icons.alert}<div><p><stro
   <p>After you allow it, you'll go back to <span class="host">${o.redirectHost}</span>.</p>
   <p>Only continue if you started connecting this assistant yourself.</p>
 </div></div>
+${
+  o.hosted
+    ? h`<section class="signup q">
+  <span class="q-label">New to Relay? Create a free account</span>
+  <p class="fine">Free includes ${String(o.hosted.monthlyResponses)} responses a month across all your forms. You'll get an account key to save; it's how you sign in.</p>
+  <form method="post" action="/oauth/signup" accept-charset="utf-8" class="signup-form">
+    ${hiddenInputs}
+    <input class="input" type="text" name="name" maxlength="80" autocomplete="name" placeholder="Your name (optional)">
+    <input class="input" type="email" name="email" maxlength="254" autocomplete="email" placeholder="Email for important notices (optional)">
+    <button class="btn btn-ink" type="submit">Create a free account ${icons.arrow}</button>
+  </form>
+</section>
+<p class="or">Already have an account?</p>`
+    : ""
+}
 <form method="post" action="/oauth/authorize" accept-charset="utf-8">
-  ${hidden.map(([k, v]) => h`<input type="hidden" name="${k}" value="${v}">`)}
+  ${hiddenInputs}
   <div class="q">
-    <label class="q-head" for="owner-key"><span class="q-label">Your owner key</span></label>
+    <label class="q-head" for="owner-key"><span class="q-label">${o.hosted ? "Your account key" : "Your owner key"}</span></label>
     <input class="input" type="password" id="owner-key" name="owner_key" autocomplete="current-password" spellcheck="false" required>
-    <p class="fine">It's the <span class="mono">RELAY_OWNER_KEY</span> you set when you deployed <span class="mono">${o.host}</span>. It isn't shared with ${app}; the app gets its own token instead.</p>
-    <p class="fine">Not your Relay? You need your own: <a href="/#start">set one up in a few minutes</a>.</p>
+    ${keyHelp}
   </div>
   <div class="actions">
-    <button class="btn btn-primary" type="submit" name="decision" value="allow">${icons.check} Allow</button>
+    <button class="btn btn-primary" type="submit" name="decision" value="allow">${icons.check} ${o.hosted ? "Sign in and allow" : "Allow"}</button>
     <button class="btn btn-ghost" type="submit" name="decision" value="deny" formnovalidate>Deny</button>
   </div>
 </form>`;
   return layout({ title: `Allow ${app} · Relay`, body, host: o.host, noindex: true });
+}
+
+/** After sign-up: show the new account key once, then continue the connection with it. */
+export function accountKeyPage(o: { host: string; clientName: string | null; key: string; params: Record<string, string | undefined> }): string {
+  const app = o.clientName || "your assistant";
+  const hidden = Object.entries(o.params).filter(([, v]) => v !== undefined) as [string, string][];
+  const body = h`
+<section class="form-head">
+  <p class="eyebrow"><span class="dot mint"></span>Account created</p>
+  <h1 class="display">Save your <em>account key.</em></h1>
+  <p class="lede">This is the only time it's shown. You'll need it to connect another assistant, or to sign in again later.</p>
+</section>
+<div class="q">
+  <span class="q-label">Your account key</span>
+  <code class="keybox">${o.key}</code>
+  <p class="fine">Keep it somewhere safe, like a password manager. Anyone who has it can manage your forms. If it's lost, it can't be recovered.</p>
+</div>
+<form method="post" action="/oauth/authorize" accept-charset="utf-8">
+  ${hidden.map(([k, v]) => h`<input type="hidden" name="${k}" value="${v}">`)}
+  <input type="hidden" name="owner_key" value="${o.key}">
+  <label class="opt saved-check"><input type="checkbox" name="saved" value="yes" required><span class="opt-mark check"></span><span class="opt-text">I've saved my key</span></label>
+  <div class="actions">
+    <button class="btn btn-primary" type="submit" name="decision" value="allow">${icons.check} Continue to ${app}</button>
+  </div>
+</form>`;
+  return layout({ title: "Save your key · Relay", body, host: o.host, noindex: true });
 }
 
 export const oauthErrorPage = (host: string, message: string) =>

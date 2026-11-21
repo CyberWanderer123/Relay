@@ -52,8 +52,30 @@ export interface StoredForm {
   settings: FormSettings;
   /** Effective status: a form past its deadline or at its response limit counts as closed. */
   status: "open" | "closed";
-  closed_reason?: "closed" | "deadline" | "full";
+  /** "paused": a free hosted account reached its monthly response limit. */
+  closed_reason?: "closed" | "deadline" | "full" | "paused";
   created_at: number;
+  /** The account that owns the form; "owner" is the operator (RELAY_OWNER_KEY). */
+  owner: string;
+}
+
+/** The operator's account id. Single-owner Relays have only this account. */
+export const OPERATOR = "owner";
+
+const hashKey = (key: string) => crypto.createHash("sha256").update(key).digest("hex");
+
+/** Hosted mode: open sign-ups and a monthly response limit for free accounts. Off for self-hosted Relays. */
+export interface HostingOptions {
+  hosted?: boolean;
+  monthlyResponses?: number;
+  contactEmail?: string;
+}
+
+/** Start of the current calendar month (UTC) and of the next, in unix seconds. */
+export function monthWindow(at = new Date()): { start: number; next: number } {
+  const start = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1) / 1000;
+  const next = Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1) / 1000;
+  return { start, next };
 }
 
 export interface FormLinks {
@@ -67,9 +89,30 @@ const iso = (unix: number | null) => (unix == null ? null : new Date(unix * 1000
 const now = () => Math.floor(Date.now() / 1000);
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-export function createRelay(db: DB, baseUrl: string) {
+export function createRelay(db: DB, baseUrl: string, hosting: HostingOptions = {}) {
   const q = makeQueries(db);
   const host = new URL(baseUrl).host;
+  const monthlyLimit = hosting.monthlyResponses ?? 250;
+
+  /** Usage against the free monthly limit. Unlimited for the operator, paid plans and self-hosted Relays. */
+  async function usage(owner: string) {
+    const { start, next } = monthWindow();
+    const used = await q.responsesSince(owner, start);
+    let limited = false;
+    if (hosting.hosted && owner !== OPERATOR) {
+      const account = await q.accountById(owner);
+      limited = !account || account.plan === "free";
+    }
+    const limit = limited ? monthlyLimit : null;
+    const paused = limit !== null && used >= limit;
+    const contact = hosting.contactEmail ? ` or email ${hosting.contactEmail} for more` : "";
+    const notice = paused
+      ? `This account reached its free limit of ${limit} responses this month, so its forms are paused until ${iso(next)!.slice(0, 10)}. To keep collecting, run your own Relay (free, no limits: ${baseUrl}/#start)${contact}.`
+      : limit !== null && used >= Math.floor(limit * 0.8)
+        ? `This account has used ${used} of its ${limit} free responses this month. At ${limit}, forms pause until ${iso(next)!.slice(0, 10)}.`
+        : undefined;
+    return { responses_this_month: used, limit, resets_at: iso(next), paused, ...(notice && { notice }) };
+  }
 
   const links = (id: string): FormLinks => ({
     fill: `${baseUrl}/f/${id}`,
@@ -87,7 +130,10 @@ export function createRelay(db: DB, baseUrl: string) {
     if (row.status === "closed") closed_reason = "closed";
     else if (settings.closes_at && Date.parse(settings.closes_at) <= Date.now()) closed_reason = "deadline";
     else if (settings.max_responses && Number((await q.stats(row.id)).n) >= settings.max_responses) closed_reason = "full";
+    const owner = row.owner_id ?? OPERATOR;
+    if (!closed_reason && hosting.hosted && owner !== OPERATOR && (await usage(owner)).paused) closed_reason = "paused";
     return {
+      owner,
       id: row.id,
       title: row.title,
       description: row.description,
@@ -129,9 +175,10 @@ export function createRelay(db: DB, baseUrl: string) {
     return out;
   }
 
-  async function requireForm(id: string): Promise<StoredForm> {
+  /** A form the given account may manage. Other accounts' forms look exactly like missing ones. */
+  async function requireForm(id: string, owner?: string): Promise<StoredForm> {
     const form = await findForm(id);
-    if (!form) throw notFound();
+    if (!form || (owner !== undefined && form.owner !== owner)) throw notFound();
     return form;
   }
 
@@ -178,6 +225,29 @@ export function createRelay(db: DB, baseUrl: string) {
     spotsLeft,
     requireForm,
     shareMessage,
+    usage,
+    hosted: Boolean(hosting.hosted),
+    contactEmail: hosting.contactEmail,
+
+    /** Create a free account. Returns its key once; only a hash is stored. */
+    async createAccount(input: { name?: string; email?: string }) {
+      const id = `acct_${randomId(16)}`;
+      const key = `rly_key_${crypto.randomBytes(32).toString("base64url")}`;
+      const name = input.name ? cleanText(input.name).slice(0, 80) || null : null;
+      const email = input.email ? cleanText(input.email).slice(0, 254) || null : null;
+      await q.insertAccount({ id, name, email, key_hash: hashKey(key), created_at: now() });
+      return { id, key, name };
+    },
+
+    /** The account an account key belongs to, or null. */
+    async accountForKey(key: string) {
+      if (!key.startsWith("rly_key_")) return null;
+      return (await q.accountByKeyHash(hashKey(key))) ?? null;
+    },
+
+    /** Current key hash of an account, so OAuth tokens die when an account's key changes. */
+    accountKeyHash: async (id: string) => (await q.accountById(id))?.key_hash ?? null,
+
     /** Create the tables if needed. Queries do this lazily; call it to fail fast at startup. */
     ready: () => q.init(),
     /** OAuth storage for the MCP connector sign-in (src/oauth.ts). */
@@ -190,15 +260,16 @@ export function createRelay(db: DB, baseUrl: string) {
       revokeGrant: q.revokeGrant,
     },
 
-    async createForm(input: unknown, share: ShareOptions = {}) {
+    async createForm(input: unknown, share: ShareOptions = {}, owner: string = OPERATOR) {
       const def = normalizeForm(input);
-      const form: StoredForm = { id: randomId(14), ...def, status: "open", created_at: now() };
+      const form: StoredForm = { id: randomId(14), ...def, status: "open", created_at: now(), owner };
       await q.insertForm({
         id: form.id,
         title: form.title,
         description: form.description,
         fields: JSON.stringify(form.fields),
         settings: Object.keys(form.settings).length ? JSON.stringify(form.settings) : null,
+        owner_id: owner,
         created_at: form.created_at,
       });
       return {
@@ -208,12 +279,14 @@ export function createRelay(db: DB, baseUrl: string) {
         question_count: form.fields.length,
         links: creatorLinks(form),
         share_message: shareMessage(form, share),
+        usage: await usage(owner),
       };
     },
 
-    async listForms() {
+    async listForms(owner: string = OPERATOR) {
       return {
-        forms: (await q.listForms()).map((f) => ({
+        usage: await usage(owner),
+        forms: (await q.listForms(owner)).map((f) => ({
           id: f.id,
           title: f.title,
           status: effectiveStatus(f.status, f.settings, Number(f.response_count)),
@@ -224,8 +297,8 @@ export function createRelay(db: DB, baseUrl: string) {
       };
     },
 
-    async getForm(id: string, share: ShareOptions = {}) {
-      const form = await requireForm(id);
+    async getForm(id: string, share: ShareOptions = {}, owner: string = OPERATOR) {
+      const form = await requireForm(id, owner);
       const s = await q.stats(id);
       return {
         id: form.id,
@@ -241,6 +314,7 @@ export function createRelay(db: DB, baseUrl: string) {
         settings: form.settings,
         links: creatorLinks(form),
         share_message: shareMessage(form, share),
+        usage: await usage(owner),
       };
     },
 
@@ -248,8 +322,8 @@ export function createRelay(db: DB, baseUrl: string) {
      * Read responses. By default newest first, a page at a time. With `onlyNew`, only responses
      * the creator has not been shown yet, oldest first. Either way, what is returned counts as seen.
      */
-    async getResponses(id: string, opts: { limit?: number; cursor?: string | null; onlyNew?: boolean } = {}) {
-      const form = await requireForm(id);
+    async getResponses(id: string, opts: { limit?: number; cursor?: string | null; onlyNew?: boolean } = {}, owner: string = OPERATOR) {
+      const form = await requireForm(id, owner);
       const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 20) || 20, 1), 50);
       const shape = (r: { id: string; submitted_at: number; answers: string }) => ({
         id: r.id,
@@ -290,8 +364,8 @@ export function createRelay(db: DB, baseUrl: string) {
       };
     },
 
-    async summarize(id: string) {
-      const form = await requireForm(id);
+    async summarize(id: string, owner: string = OPERATOR) {
+      const form = await requireForm(id, owner);
       const s = await q.stats(id);
       const all = (await q.allAnswers(id)).map((a) => JSON.parse(a) as Answers);
 
@@ -348,8 +422,8 @@ export function createRelay(db: DB, baseUrl: string) {
      * answers stay attached. Once a form has answers, changes that would make them misleading are
      * refused: changing a question's type, or removing an option someone chose.
      */
-    async updateForm(id: string, input: unknown) {
-      const form = await requireForm(id);
+    async updateForm(id: string, input: unknown, owner: string = OPERATOR) {
+      const form = await requireForm(id, owner);
       const def = normalizeForm(input, { reservedIds: form.fields.map((f) => f.id) });
       const answers = (await q.allAnswers(id)).map((a) => JSON.parse(a) as Answers);
       const before = new Map(form.fields.map((f) => [f.id, f]));
@@ -420,9 +494,9 @@ export function createRelay(db: DB, baseUrl: string) {
       };
     },
 
-    /** Every response as CSV, oldest first. */
-    async exportResponses(id: string) {
-      const form = await requireForm(id);
+    /** Every response as CSV, oldest first. Without an owner (a signed download link), the signature is the permission. */
+    async exportResponses(id: string, owner?: string) {
+      const form = await requireForm(id, owner);
       const rows = (await q.allResponses(id)).map((r) => ({
         id: r.id,
         submitted_at: iso(Number(r.submitted_at)),
@@ -431,8 +505,8 @@ export function createRelay(db: DB, baseUrl: string) {
       return { filename: exportFilename(form.title), count: rows.length, csv: responsesCsv(form.fields, rows) };
     },
 
-    async closeForm(id: string) {
-      const form = await requireForm(id);
+    async closeForm(id: string, owner: string = OPERATOR) {
+      const form = await requireForm(id, owner);
       await q.closeForm(id);
       return {
         id,
@@ -444,8 +518,8 @@ export function createRelay(db: DB, baseUrl: string) {
     },
 
     /** Permanently removes a form and its responses. Not exposed as an MCP tool. */
-    async deleteForm(id: string) {
-      await requireForm(id);
+    async deleteForm(id: string, owner?: string) {
+      await requireForm(id, owner);
       const r = await q.deleteForm(id);
       return { id, deleted: true, responses_deleted: r.responses };
     },

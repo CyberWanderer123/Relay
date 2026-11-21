@@ -442,3 +442,13 @@ describe("home page setup guide", () => {
     expect(fresh).not.toContain("belongs to its owner");
   });
 });
+
+describe("example key on a set-up Relay", () => {
+  it("is tucked away and labelled as not this Relay's key", async () => {
+    const owned = await (await setup().app.request("/")).text();
+    expect(owned).toMatch(/<details class="keygen"><summary>Setting up a new Relay\? Generate a key for it<\/summary>\s*<code class="keybox">/);
+    expect(owned).toContain("won't work here");
+    const fresh = await (await setup({ ownerKey: undefined }).app.request("/")).text();
+    expect(fresh).not.toContain('class="keygen"');
+  });
+});
