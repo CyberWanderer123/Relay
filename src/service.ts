@@ -180,6 +180,15 @@ export function createRelay(db: DB, baseUrl: string) {
     shareMessage,
     /** Create the tables if needed. Queries do this lazily; call it to fail fast at startup. */
     ready: () => q.init(),
+    /** OAuth storage for the MCP connector sign-in (src/oauth.ts). */
+    oauthStore: {
+      insertClient: q.insertOAuthClient,
+      getClient: q.getOAuthClient,
+      insertGrant: q.insertGrant,
+      takeGrant: q.takeGrant,
+      getGrant: q.getGrant,
+      revokeGrant: q.revokeGrant,
+    },
 
     async createForm(input: unknown, share: ShareOptions = {}) {
       const def = normalizeForm(input);

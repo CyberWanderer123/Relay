@@ -1,15 +1,15 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { requireOwnerKey } from "../routes/api.js";
+import { requireMcpAuth } from "../oauth.js";
 import type { Deps } from "../routes/deps.js";
 import { localBackend } from "./backend.js";
 import { createMcpServer } from "./tools.js";
 
 /**
  * Remote MCP endpoint at /mcp (Streamable HTTP, stateless, JSON responses).
- * Auth: the owner key as a Bearer header, or ?key= for connector UIs that can
- * only take a URL. Query strings are never logged.
+ * Auth: an OAuth access token (see src/oauth.ts), or the owner key as a Bearer header or ?key=
+ * for connectors set up before OAuth. Query strings are never logged.
  *
  * Only POST is served. Relay keeps no sessions and never pushes messages, so a
  * GET (open an event stream) or DELETE (end a session) has nothing to do. The
@@ -30,7 +30,7 @@ export function mcpRoutes({ relay, config }: Deps) {
 
   r.post(
     "/mcp",
-    requireOwnerKey(config.ownerKey, true),
+    requireMcpAuth({ relay, config }),
     bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Request body too large." }, 413) }),
     async (c) => {
       const server = createMcpServer(backend);

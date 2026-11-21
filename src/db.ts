@@ -27,6 +27,21 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS responses_by_form ON responses (form_id)`,
   // The newest response (by rowid) the creator has been shown, per form. Powers "new since last check".
+  // OAuth for MCP connectors: registered apps, and their codes and tokens (stored as SHA-256 hashes only).
+  `CREATE TABLE IF NOT EXISTS oauth_clients (
+    id            TEXT PRIMARY KEY,
+    name          TEXT,
+    redirect_uris TEXT NOT NULL,            -- JSON array
+    secret_hash   TEXT,                     -- null for public clients (PKCE only)
+    created_at    INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS oauth_grants (
+    hash       TEXT PRIMARY KEY,           -- sha256 of the code or token
+    kind       TEXT NOT NULL CHECK (kind IN ('code', 'access', 'refresh')),
+    client_id  TEXT NOT NULL,
+    data       TEXT NOT NULL,              -- JSON: redirect_uri + PKCE challenge for codes; owner-key fingerprint for tokens
+    expires_at INTEGER NOT NULL            -- unix seconds
+  )`,
   `CREATE TABLE IF NOT EXISTS form_reads (
     form_id  TEXT PRIMARY KEY REFERENCES forms(id) ON DELETE CASCADE,
     last_seq INTEGER NOT NULL
@@ -178,6 +193,39 @@ export function makeQueries(db: DB) {
 
     countAfter: async (formId: string, after: number) =>
       Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM responses WHERE form_id = ? AND rowid > ?`, [formId, after]))?.n ?? 0),
+
+    insertOAuthClient: (row: { id: string; name: string | null; redirect_uris: string; secret_hash: string | null; created_at: number }) =>
+      run(`INSERT INTO oauth_clients (id, name, redirect_uris, secret_hash, created_at) VALUES (?, ?, ?, ?, ?)`, [
+        row.id,
+        row.name,
+        row.redirect_uris,
+        row.secret_hash,
+        row.created_at,
+      ]),
+
+    getOAuthClient: (id: string) =>
+      one<{ id: string; name: string | null; redirect_uris: string; secret_hash: string | null }>(
+        `SELECT id, name, redirect_uris, secret_hash FROM oauth_clients WHERE id = ?`,
+        [id],
+      ),
+
+    /** Store a code or token by hash, clearing out expired ones while we're here. */
+    insertGrant: async (hash: string, kind: "code" | "access" | "refresh", clientId: string, data: string, expiresAt: number, now: number) => {
+      await run(`DELETE FROM oauth_grants WHERE expires_at < ?`, [now]);
+      return run(`INSERT INTO oauth_grants (hash, kind, client_id, data, expires_at) VALUES (?, ?, ?, ?, ?)`, [hash, kind, clientId, data, expiresAt]);
+    },
+
+    /** Remove and return a grant in one statement, so a code or refresh token can be used only once. */
+    takeGrant: (hash: string, kind: "code" | "refresh") =>
+      one<{ client_id: string; data: string; expires_at: number }>(
+        `DELETE FROM oauth_grants WHERE hash = ? AND kind = ? RETURNING client_id, data, expires_at`,
+        [hash, kind],
+      ),
+
+    getGrant: (hash: string, kind: "access") =>
+      one<{ client_id: string; data: string; expires_at: number }>(`SELECT client_id, data, expires_at FROM oauth_grants WHERE hash = ? AND kind = ?`, [hash, kind]),
+
+    revokeGrant: (hash: string) => run(`DELETE FROM oauth_grants WHERE hash = ?`, [hash]),
 
     closeForm: (id: string) => run(`UPDATE forms SET status = 'closed' WHERE id = ?`, [id]),
 

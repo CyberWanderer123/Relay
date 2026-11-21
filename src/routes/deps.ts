@@ -63,3 +63,6 @@ export function toRaw(input: Record<string, unknown>): Record<string, string[]> 
 
 /** Set by a form route to the sites allowed to embed that response; the security middleware turns it into frame-ancestors. */
 export const FRAME_ANCESTORS_HEADER = "x-relay-frame-ancestors";
+
+/** Set by the OAuth approval page to the app's origin, so the browser may follow the post-approval redirect (form-action). */
+export const FORM_ACTION_HEADER = "x-relay-form-action";

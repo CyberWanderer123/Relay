@@ -47,6 +47,10 @@ Open the printed form link to fill it in. To create forms from an assistant, con
 
 ## Deploy to Vercel + Turso (recommended)
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN&envDescription=Your%20owner%20key%20(any%20long%20random%20secret)%20and%20your%20Turso%20database%20URL%20and%20token&envLink=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay%23deploy-to-vercel--turso-recommended)
+
+The button copies Relay into your Vercel account and asks for `RELAY_OWNER_KEY` (any long random secret: it is the password to your Relay) and your Turso database URL and token. The steps below do the same by hand.
+
 Vercel has no lasting disk, so the data lives in [Turso](https://turso.tech) — hosted SQLite with a free tier. Relay runs as a Vercel function from `src/index.ts`.
 
 **1. Create the database** (Turso CLI, or the Turso dashboard):
@@ -116,10 +120,14 @@ The SQLite file lives at `/data/relay.db` on the volume. **Back it up.** To use 
 Relay must be deployed on a public HTTPS address first — Claude connects from Anthropic's cloud, so `localhost` will not work.
 
 1. In Claude, open **Customize → Connectors → Add custom connector**.
-2. URL: `https://<your-relay>/mcp`
-3. Sign-in: **No sign-in**, then add a request header `Authorization` with the value `Bearer <your owner key>` (type the word `Bearer` and the space yourself).
+2. URL: `https://<your-relay>/mcp`, with no key in it. Leave the sign-in setting on its default (OAuth).
+3. Claude opens Relay's **Allow** page. Type your owner key once and press **Allow**.
 
-If your connector screen only takes a URL, use `https://<your-relay>/mcp?key=<your owner key>` instead, and treat that URL like a password. Free accounts can add one custom connector.
+Claude then gets its own token: an hour-long access token that renews itself, with a 30-day refresh token. Your owner key never leaves Relay. To cut every connected assistant off at once, change `RELAY_OWNER_KEY` and redeploy. Free accounts can add one custom connector.
+
+Relay implements the MCP authorization spec (OAuth 2.1 with PKCE and dynamic client registration), so other MCP clients that support it connect the same way. Discovery starts at `/.well-known/oauth-protected-resource/mcp`.
+
+Clients without OAuth can still send the owner key: an `Authorization: Bearer <owner key>` header, or `https://<your-relay>/mcp?key=<owner key>` as a last resort (treat that URL like a password).
 
 ### Claude Desktop (local MCP program)
 
@@ -171,6 +179,8 @@ Public: `GET /f/:id` (send `Accept: text/plain` for the agent version) · `POST 
 
 **Agent forms spec:** [docs/agent-forms.md](docs/agent-forms.md), also served at `/spec`, is the public contract for how assistants read a form and build the review link. After editing it, run `npm run spec`.
 
+OAuth for MCP connectors: `GET /.well-known/oauth-protected-resource[/mcp]` · `GET /.well-known/oauth-authorization-server` · `POST /oauth/register` · `GET|POST /oauth/authorize` · `POST /oauth/token` · `POST /oauth/revoke`
+
 Creator API (Bearer key): `POST /api/forms` · `GET /api/forms` · `GET /api/forms/:id` · `PUT /api/forms/:id` · `GET /api/forms/:id/responses?limit=&cursor=&only_new=1` · `GET /api/forms/:id/responses.csv` · `POST /api/forms/:id/export-link` · `GET /api/forms/:id/summary` · `POST /api/forms/:id/close` · `DELETE /api/forms/:id`
 
 ## Configuration
@@ -192,6 +202,7 @@ Creator API (Bearer key): `POST /api/forms` · `GET /api/forms` · `GET /api/for
 
 - Every value in HTML is escaped; pages send a strict Content-Security-Policy with no inline scripts or styles. Form pages load one small same-origin script (copy buttons and conditional questions); every page works without it.
 - Forms refuse to be framed unless they list the sites allowed to embed them.
+- Connectors sign in with OAuth 2.1: PKCE (S256) is required, codes are single-use and expire in 10 minutes, refresh tokens rotate, and codes and tokens are stored only as SHA-256 hashes. Errors before an app's return address is verified are shown on Relay's own page, never redirected. The approval page is rate-limited against key guessing.
 - `/clean` starts with fixed instructions written by the service. Creator text sits below, labelled as data, with control characters stripped and lengths capped.
 - The review page shows every answer and the destination domain before Submit.
 - `Referrer-Policy: no-referrer`; request logs record method, path and status only — never query strings, since review links carry answers.

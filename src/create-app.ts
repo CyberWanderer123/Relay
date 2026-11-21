@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { Hono } from "hono";
 import type { Config } from "./config.js";
 import { RelayError } from "./errors.js";
@@ -6,7 +7,8 @@ import { apiRoutes } from "./routes/api.js";
 import { claudeRoutes } from "./routes/claude.js";
 import { cleanRoutes } from "./routes/clean.js";
 import { exportRoutes } from "./routes/export.js";
-import { FRAME_ANCESTORS_HEADER, type Deps } from "./routes/deps.js";
+import { FORM_ACTION_HEADER, FRAME_ANCESTORS_HEADER, type Deps } from "./routes/deps.js";
+import { oauthRoutes } from "./oauth.js";
 import { formRoutes } from "./routes/form.js";
 import { reviewRoutes } from "./routes/review.js";
 import type { Relay } from "./service.js";
@@ -21,13 +23,13 @@ import { CSS, FAVICON_SVG } from "./views/styles.js";
  * /c/ fallback pages load one same-origin script; there are no inline scripts anywhere. Framing is
  * refused unless a form lists the sites allowed to embed it.
  */
-function csp(o: { script: boolean; frameAncestors?: string }) {
+function csp(o: { script: boolean; frameAncestors?: string; formAction?: string }) {
   return [
     "default-src 'none'",
     "style-src 'self' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
     "img-src 'self' data: https:",
-    "form-action 'self'",
+    `form-action 'self'${o.formAction ? ` ${o.formAction}` : ""}`,
     "base-uri 'none'",
     `frame-ancestors ${o.frameAncestors ?? "'none'"}`,
     ...(o.script ? ["script-src 'self'"] : []),
@@ -53,7 +55,9 @@ export function createApp(relay: Relay, config: Config) {
     await next();
     const frameAncestors = c.res.headers.get(FRAME_ANCESTORS_HEADER) || undefined;
     c.res.headers.delete(FRAME_ANCESTORS_HEADER);
-    c.header("Content-Security-Policy", csp({ script: /^\/(c|f)\//.test(c.req.path), frameAncestors }));
+    const formAction = c.res.headers.get(FORM_ACTION_HEADER) || undefined;
+    c.res.headers.delete(FORM_ACTION_HEADER);
+    c.header("Content-Security-Policy", csp({ script: /^\/(c|f)\//.test(c.req.path), frameAncestors, formAction }));
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Content-Type-Options", "nosniff");
     // Old browsers ignore frame-ancestors; X-Frame-Options can't list several sites, so send it only when framing is refused.
@@ -61,10 +65,21 @@ export function createApp(relay: Relay, config: Config) {
     c.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
     c.header("Cross-Origin-Opener-Policy", "same-origin");
     if (config.baseUrl.startsWith("https://")) c.header("Strict-Transport-Security", "max-age=31536000");
-    if (/^\/(f|a|c|api)\//.test(c.req.path) && !c.req.path.endsWith("/theme.css")) c.header("Cache-Control", "no-store");
+    if (/^\/(f|a|c|api|oauth)\//.test(c.req.path) && !c.req.path.endsWith("/theme.css")) c.header("Cache-Control", "no-store");
   });
 
-  app.get("/", (c) => c.html(homePage({ host: relay.host, baseUrl: relay.baseUrl })));
+  // The home page shows a freshly generated owner key in its setup guide, so it must never be cached.
+  app.get("/", (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.html(
+      homePage({
+        host: relay.host,
+        baseUrl: relay.baseUrl,
+        ownerConfigured: Boolean(config.ownerKey),
+        suggestedKey: crypto.randomBytes(24).toString("base64url"),
+      }),
+    );
+  });
   app.get("/healthz", (c) => c.json({ ok: true }));
   // A form's brand colour as CSS variables. A stylesheet, not inline styles, so the CSP stays strict.
   app.get("/f/:id/theme.css", async (c) => {
@@ -87,7 +102,7 @@ export function createApp(relay: Relay, config: Config) {
   app.get("/favicon.svg", (c) => c.body(FAVICON_SVG, 200, { "Content-Type": "image/svg+xml" }));
   // Form pages must stay fetchable: "fill with Claude" has Claude read /a/:id (or the older /f/:id/clean), and Claude's
   // fetcher obeys robots.txt. Search engines are kept out by noindex headers/meta, not by this file.
-  app.get("/robots.txt", (c) => c.text("User-agent: *\nAllow: /a/\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\nDisallow: /x/\n"));
+  app.get("/robots.txt", (c) => c.text("User-agent: *\nAllow: /a/\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\nDisallow: /x/\nDisallow: /oauth/\n"));
 
   app.route("/", formRoutes(deps));
   app.route("/", cleanRoutes(deps));
@@ -95,6 +110,7 @@ export function createApp(relay: Relay, config: Config) {
   app.route("/", claudeRoutes(deps));
   app.route("/", apiRoutes(deps));
   app.route("/", exportRoutes(deps));
+  app.route("/", oauthRoutes(deps));
   app.route("/", mcpRoutes(deps));
 
   app.notFound((c) =>

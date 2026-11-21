@@ -411,3 +411,34 @@ describe("new since last check", () => {
     expect(await list()).toBe(0);
   });
 });
+
+describe("home page setup guide", () => {
+  const keyOf = (html: string) => /<code class="keybox">([A-Za-z0-9_-]{32})<\/code>/.exec(html)?.[1];
+
+  it("offers a fresh owner key on every visit and is never cached", async () => {
+    const { app } = setup();
+    const first = await app.request("/");
+    const a = keyOf(await first.text());
+    const b = keyOf(await (await app.request("/")).text());
+    expect(a).toBeTruthy();
+    expect(a).not.toBe(b);
+    expect(first.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("links to a one-click Vercel deploy that asks for the right settings", async () => {
+    const html = await (await setup().app.request("/")).text();
+    const href = /href="(https:\/\/vercel\.com\/new\/clone\?[^"]+)"/.exec(html)![1]!.replace(/&amp;/g, "&");
+    const u = new URL(href);
+    expect(u.searchParams.get("repository-url")).toBe("https://github.com/CyberWanderer123/Relay");
+    expect(u.searchParams.get("env")).toBe("RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN");
+  });
+
+  it("says whether this Relay is set up, and shows its connector address", async () => {
+    const owned = await (await setup().app.request("/")).text();
+    expect(owned).toContain("belongs to its owner");
+    expect(owned).toContain("https://relay.test/mcp");
+    const fresh = await (await setup({ ownerKey: undefined }).app.request("/")).text();
+    expect(fresh).toContain("set up yet.");
+    expect(fresh).not.toContain("belongs to its owner");
+  });
+});

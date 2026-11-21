@@ -458,13 +458,24 @@ pre.code .c { color: var(--muted); }
 .bars i.w78 { width: 78%; } .bars i.w17 { width: 17%; opacity: .7; } .bars i.w4 { width: 4%; opacity: .5; }
 .bars b { text-align: right; color: var(--text); }
 
+/* ---------- landing: get started ---------- */
+.start { margin-bottom: 96px; }
+.setup { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.setup-step { padding: 26px; display: grid; gap: 12px; align-content: start; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.setup-step .q-num { font: 500 12px/1 var(--mono); }
+.setup-step h3 { margin: 0; font-size: 18px; }
+.setup-step p { margin: 0; color: var(--text-2); font-size: 15px; }
+.setup-step .btn { justify-self: start; }
+.keybox { display: block; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--line); font: 500 14px/1.4 var(--mono); color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.prompts { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--text-2); font-size: 15px; }
+
 /* ---------- landing: developers ---------- */
 .devs { margin: 24px 0 40px; padding-top: 28px; border-top: 1px solid var(--line); }
 .dev-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .dev-grid p { margin: 0; color: var(--text-2); font-size: 15px; }
 
 @media (max-width: 760px) {
-  .steps, .split, .principles, .hero-grid, .pillars, .understand-grid, .dev-grid { grid-template-columns: 1fr; }
+  .steps, .split, .principles, .hero-grid, .pillars, .understand-grid, .dev-grid, .setup { grid-template-columns: 1fr; }
   .hero-grid { gap: 32px; }
   .split.feature > .mock-card.run { order: 2; }
   .split { gap: 20px; }

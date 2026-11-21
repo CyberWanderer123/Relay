@@ -12,7 +12,11 @@ import { csvResponse, makeExportLink } from "./export.js";
  * `allowQueryKey` is set — `?key=<key>` for connectors that can only take a URL.
  * Rejections are logged with a reason, never with the presented value.
  */
-export function requireOwnerKey(ownerKey: string | undefined, allowQueryKey = false): MiddlewareHandler {
+export function requireOwnerKey(
+  ownerKey: string | undefined,
+  allowQueryKey = false,
+  challenge = 'Bearer realm="relay"',
+): MiddlewareHandler {
   return async (c, next) => {
     if (!ownerKey) return c.json({ error: "The creator API is disabled. Set RELAY_OWNER_KEY to enable it." }, 503);
 
@@ -28,7 +32,7 @@ export function requireOwnerKey(ownerKey: string | undefined, allowQueryKey = fa
           ? "Authorization header without 'Bearer ' did not match"
           : "key did not match";
       console.warn(`auth rejected: ${c.req.method} ${c.req.path} — ${reason}`);
-      c.header("WWW-Authenticate", 'Bearer realm="relay"');
+      c.header("WWW-Authenticate", challenge);
       return c.json({ error: "Unauthorized. Send the owner key as 'Authorization: Bearer <key>'." }, 401);
     }
     await next();

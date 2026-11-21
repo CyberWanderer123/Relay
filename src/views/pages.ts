@@ -410,7 +410,17 @@ export const rateLimitedPage = (host: string) =>
 
 /* ------------------------------------------------------------------ */
 
-export function homePage(o: { host: string; baseUrl: string }): string {
+/** Upstream repository. Forks can change this to point at their own copy. */
+export const REPO_URL = "https://github.com/CyberWanderer123/Relay";
+/** Vercel's clone-and-deploy link: copies the repo and asks for the three settings Relay needs. */
+export const DEPLOY_URL =
+  "https://vercel.com/new/clone?repository-url=" +
+  encodeURIComponent(REPO_URL) +
+  "&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN" +
+  "&envDescription=" + encodeURIComponent("Your owner key (any long random secret) and your Turso database URL and token") +
+  "&envLink=" + encodeURIComponent(REPO_URL + "#deploy-to-vercel--turso-recommended");
+
+export function homePage(o: { host: string; baseUrl: string; ownerConfigured: boolean; suggestedKey: string }): string {
   const body = h`
 <section class="hero hero-grid">
   <div>
@@ -418,7 +428,7 @@ export function homePage(o: { host: string; baseUrl: string }): string {
     <h1 class="display">Ask for a form.<br><em>Ask</em> what people said.</h1>
     <p class="lede">Relay is the form builder you run from your AI assistant. Describe what you need, share one link, then ask how it's going. Relay builds the form, runs it on its own, and turns the answers into answers.</p>
     <div class="actions">
-      <a class="btn btn-ink" href="#connect">Connect your assistant ${icons.arrow}</a>
+      <a class="btn btn-ink" href="#start">Get started ${icons.arrow}</a>
       <a class="btn btn-ghost" href="#understand">See the analysis</a>
     </div>
   </div>
@@ -518,26 +528,50 @@ export function homePage(o: { host: string; baseUrl: string }): string {
   <div class="principle"><h3>Open source, yours to host</h3><p>Run it free on Vercel and Turso, keep your data, and export it whenever you like.</p></div>
 </section>
 
-<section class="split" id="connect">
-  <div>
-    <p class="eyebrow"><span class="dot"></span>Connect</p>
-    <h2>Connect your assistant.</h2>
-    <p>Add Relay as a remote connector at <span class="mono">${o.baseUrl}/mcp</span>, or run the local MCP program with your owner key in Claude Desktop.</p>
-    <p class="fine">Eight tools: create_form · update_form · list_forms · get_form · get_responses · summarize_responses · export_responses · close_form</p>
+<section class="start" id="start">
+  <div class="understand-head">
+    <p class="eyebrow"><span class="dot"></span>Get started</p>
+    <h2>Run your own Relay in a few minutes.</h2>
+    <p>Each Relay belongs to one person: its owner. You deploy your own copy, keep its owner key, and connect your assistant to it. It's free to run.</p>
   </div>
-  <pre class="code"><span class="c">// claude_desktop_config.json</span>
-{
-  <span class="k">"mcpServers"</span>: {
-    <span class="k">"relay"</span>: {
-      <span class="k">"command"</span>: <span class="s">"npx"</span>,
-      <span class="k">"args"</span>: [<span class="s">"tsx"</span>, <span class="s">"/path/to/relay/src/mcp/stdio.ts"</span>],
-      <span class="k">"env"</span>: {
-        <span class="k">"RELAY_URL"</span>: <span class="s">"${o.baseUrl}"</span>,
-        <span class="k">"RELAY_OWNER_KEY"</span>: <span class="s">"your-owner-key"</span>
-      }
-    }
+  ${
+    o.ownerConfigured
+      ? h`<div class="notice">${icons.info}<div><p><strong>This Relay, <span class="host">${o.host}</span>, belongs to its owner.</strong></p><p>If it's yours, skip to step 3. If not, deploy your own copy: it takes a few minutes.</p></div></div>`
+      : h`<div class="notice warn">${icons.alert}<div><p><strong>This Relay isn't set up yet.</strong></p><p>Add an owner key (step 2) as <span class="mono">RELAY_OWNER_KEY</span> in this deployment's settings, then redeploy.</p></div></div>`
   }
-}</pre>
+  <ol class="setup">
+    <li class="setup-step card">
+      <span class="q-num">01 — Deploy</span>
+      <h3>Deploy your own copy</h3>
+      <p>One click copies Relay into your Vercel account and asks for three settings: your owner key (step 2) and a database. The data lives in a free <a href="https://turso.tech" rel="noopener noreferrer">Turso</a> database; create one and copy its URL and token.</p>
+      <a class="btn btn-ink btn-sm" href="${DEPLOY_URL}" rel="noopener noreferrer">Deploy to Vercel ${icons.arrow}</a>
+      <p class="fine">Prefer your own server? Use <a href="${REPO_URL}#self-hosting-with-docker" rel="noopener noreferrer">Docker</a>, or <a href="${REPO_URL}#quick-start-local" rel="noopener noreferrer">run it on your computer</a>.</p>
+    </li>
+    <li class="setup-step card">
+      <span class="q-num">02 — Owner key</span>
+      <h3>Choose your owner key</h3>
+      <p>The owner key is the password to your Relay. Here is a random one, made just now for you and not stored anywhere:</p>
+      <code class="keybox">${o.suggestedKey}</code>
+      <p class="fine">Use it as <span class="mono">RELAY_OWNER_KEY</span> and keep it secret: anyone who has it can manage your forms. Lost it? Set a new one and redeploy; connected assistants simply sign in again.</p>
+    </li>
+    <li class="setup-step card">
+      <span class="q-num">03 — Connect</span>
+      <h3>Connect your assistant</h3>
+      <p>In Claude, open <b>Customize → Connectors → Add custom connector</b> and enter your Relay's address followed by <span class="mono">/mcp</span>:</p>
+      <code class="keybox">${o.ownerConfigured ? `${o.baseUrl}/mcp` : "https://your-relay.vercel.app/mcp"}</code>
+      <p class="fine">Claude opens your Relay's <b>Allow</b> page. Paste your owner key and press Allow. Claude Desktop and other MCP clients that support connectors work the same way.</p>
+    </li>
+    <li class="setup-step card">
+      <span class="q-num">04 — Try it</span>
+      <h3>Ask for your first form</h3>
+      <ul class="prompts">
+        <li>"Make a sign-up for Saturday's workshop: 30 seats, close Friday 6pm."</li>
+        <li>"Make a 3-question feedback form and give me the link."</li>
+        <li>"Anything new on my forms?"</li>
+      </ul>
+      <p class="fine">Eight tools: create_form · update_form · list_forms · get_form · get_responses · summarize_responses · export_responses · close_form</p>
+    </li>
+  </ol>
 </section>
 
 <section class="devs" aria-label="For developers">
@@ -556,3 +590,55 @@ export function homePage(o: { host: string; baseUrl: string }): string {
     wide: true,
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* OAuth: the owner approves a connector                               */
+/* ------------------------------------------------------------------ */
+
+/** /oauth/authorize: "Allow <app> to use your Relay?" The owner key is the login (one owner per Relay). */
+export function authorizePage(o: {
+  host: string;
+  clientName: string | null;
+  redirectHost: string;
+  params: Record<string, string | undefined>;
+  error?: string;
+}): string {
+  const app = o.clientName || "An app";
+  const hidden = Object.entries(o.params).filter(([, v]) => v !== undefined) as [string, string][];
+  const body = h`
+<section class="form-head">
+  <p class="eyebrow"><span class="dot"></span>Connect an assistant</p>
+  <h1 class="display">Allow <em>${app}</em> to use your Relay?</h1>
+  <p class="lede">It will be able to create, edit, read and close your forms, read responses and export them. It can't delete anything.</p>
+</section>
+${o.error ? h`<div class="notice error" role="alert">${icons.alert}<div><p><strong>${o.error}</strong></p></div></div>` : ""}
+<div class="notice">${icons.lock}<div>
+  <p>After you allow it, you'll go back to <span class="host">${o.redirectHost}</span>.</p>
+  <p>Only continue if you started connecting this assistant yourself.</p>
+</div></div>
+<form method="post" action="/oauth/authorize" accept-charset="utf-8">
+  ${hidden.map(([k, v]) => h`<input type="hidden" name="${k}" value="${v}">`)}
+  <div class="q">
+    <label class="q-head" for="owner-key"><span class="q-label">Your owner key</span></label>
+    <input class="input" type="password" id="owner-key" name="owner_key" autocomplete="current-password" spellcheck="false" required>
+    <p class="fine">It's the <span class="mono">RELAY_OWNER_KEY</span> you set when you deployed <span class="mono">${o.host}</span>. It isn't shared with ${app}; the app gets its own token instead.</p>
+    <p class="fine">Not your Relay? You need your own: <a href="/#start">set one up in a few minutes</a>.</p>
+  </div>
+  <div class="actions">
+    <button class="btn btn-primary" type="submit" name="decision" value="allow">${icons.check} Allow</button>
+    <button class="btn btn-ghost" type="submit" name="decision" value="deny" formnovalidate>Deny</button>
+  </div>
+</form>`;
+  return layout({ title: `Allow ${app} · Relay`, body, host: o.host, noindex: true });
+}
+
+export const oauthErrorPage = (host: string, message: string) =>
+  resultPage({
+    host,
+    title: "Can't connect · Relay",
+    eyebrow: "Connection stopped",
+    heading: "This connection can't continue.",
+    lede: message,
+    icon: icons.alert,
+    tone: "neutral",
+  });
