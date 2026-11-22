@@ -265,7 +265,9 @@ describe("Fill with Claude link", () => {
   it("pages outside the form flow run no scripts", async () => {
     const res = await setup().app.request("/");
     expect(res.headers.get("content-security-policy")).not.toContain("script-src");
-    expect(await res.text()).not.toContain("<script");
+    // The only <script> allowed is JSON-LD structured data, which browsers never execute.
+    const scripts = (await res.text()).match(/<script[^>]*>/g) ?? [];
+    expect(scripts).toEqual(['<script type="application/ld+json">']);
   });
 });
 

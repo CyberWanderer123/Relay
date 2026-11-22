@@ -488,8 +488,14 @@ pre.code .c { color: var(--muted); }
 .dev-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .dev-grid p { margin: 0; color: var(--text-2); font-size: 15px; }
 
+/* ---------- landing: questions ---------- */
+.faq { margin: 24px 0 40px; padding-top: 28px; border-top: 1px solid var(--line); }
+.faq-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px 40px; margin-top: 20px; }
+.faq-grid h3 { margin: 0 0 6px; }
+.faq-grid p { margin: 0; color: var(--text-2); font-size: 15px; }
+
 @media (max-width: 760px) {
-  .steps, .split, .principles, .hero-grid, .pillars, .understand-grid, .dev-grid, .setup { grid-template-columns: 1fr; }
+  .steps, .split, .principles, .hero-grid, .pillars, .understand-grid, .dev-grid, .faq-grid, .setup { grid-template-columns: 1fr; }
   .hero-grid { gap: 32px; }
   .split.feature > .mock-card.run { order: 2; }
   .split { gap: 20px; }

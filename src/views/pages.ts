@@ -7,6 +7,16 @@ import { PAGE_JS_VERSION } from "./scripts.js";
 import { themeCss, themeVersion } from "./theme.js";
 import { ASSISTANTS, type Assistant } from "../assistants.js";
 import { renderChatPrompt } from "../clean.js";
+import { faqs, homeJsonLd, OG_IMAGE_PATH, OG_IMAGE_SIZE, SITE_DESCRIPTION, SITE_NAME } from "./seo.js";
+
+/** Canonical URL and link-preview tags for a public page. */
+const social = (baseUrl: string, path: string) => ({
+  url: `${baseUrl}${path}`,
+  image: `${baseUrl}${OG_IMAGE_PATH}`,
+  imageWidth: OG_IMAGE_SIZE.width,
+  imageHeight: OG_IMAGE_SIZE.height,
+  siteName: SITE_NAME,
+});
 
 export type Values = Record<string, string[]>;
 export type Errors = Record<string, string>;
@@ -430,6 +440,8 @@ export function homePage(o: {
   /** Hosted Relay: anyone can use it with a free account. */
   hosted?: { monthlyResponses: number; contactEmail?: string };
 }): string {
+  const site = { host: o.host, baseUrl: o.baseUrl, hosted: o.hosted };
+  const faqList = faqs(site);
   const body = h`
 <section class="hero hero-grid">
   <div>
@@ -608,6 +620,14 @@ export function homePage(o: {
   </ol>
 </section>
 
+<section class="faq" id="faq">
+  <p class="eyebrow"><span class="dot"></span>Questions</p>
+  <h2>Questions people ask</h2>
+  <div class="faq-grid">
+    ${faqList.map((f) => h`<div><h3>${f.q}</h3><p>${f.a}</p></div>`)}
+  </div>
+</section>
+
 <section class="devs" aria-label="For developers">
   <p class="eyebrow"><span class="dot mint"></span>For developers</p>
   <div class="dev-grid">
@@ -617,11 +637,13 @@ export function homePage(o: {
   </div>
 </section>`;
   return layout({
-    title: "Relay — the agent-first form builder",
-    description: "Build forms by asking your AI assistant, share one link, and ask what people said. Open source.",
+    title: "Relay Forms — agent-first form builder for Claude and ChatGPT",
+    description: SITE_DESCRIPTION,
     body,
     host: o.host,
     wide: true,
+    social: social(o.baseUrl, "/"),
+    jsonLd: homeJsonLd(site),
   });
 }
 
@@ -728,7 +750,17 @@ export const oauthErrorPage = (host: string, message: string) =>
 /* Legal pages: terms and privacy. Plain-language templates; the operator should review them. */
 /* ------------------------------------------------------------------ */
 
-function legalPage(o: { host: string; title: string; updated: string; intro: string; sections: [string, string[]][]; contactEmail?: string }): string {
+function legalPage(o: {
+  host: string;
+  baseUrl: string;
+  path: string;
+  title: string;
+  description: string;
+  updated: string;
+  intro: string;
+  sections: [string, string[]][];
+  contactEmail?: string;
+}): string {
   const body = h`
 <section class="form-head">
   <p class="eyebrow"><span class="dot"></span>Last updated ${o.updated}</p>
@@ -739,14 +771,17 @@ function legalPage(o: { host: string; title: string; updated: string; intro: str
   ${o.sections.map(([heading, paras]) => h`<section><h2>${heading}</h2>${paras.map((p) => h`<p>${p}</p>`)}</section>`)}
   <section><h2>Contact</h2><p>${o.contactEmail ? h`Questions or requests: <a href="mailto:${o.contactEmail}">${o.contactEmail}</a>.` : "Contact the operator of this Relay."}</p></section>
 </div>`;
-  return layout({ title: `${o.title} · Relay`, body, host: o.host });
+  return layout({ title: `${o.title} · Relay`, description: o.description, body, host: o.host, social: social(o.baseUrl, o.path) });
 }
 
-export const termsPage = (host: string, contactEmail?: string) =>
+export const termsPage = (host: string, baseUrl: string, contactEmail?: string) =>
   legalPage({
     host,
+    baseUrl,
+    path: "/terms",
     contactEmail,
     title: "Terms of use",
+    description: "The terms for using Relay, the open-source, agent-first form builder: your forms, your data, your account and respondents.",
     updated: "21 November 2026",
     intro: `These terms cover your use of the Relay service at ${host}. By creating an account, connecting an assistant or creating a form, you agree to them. If you answer a form, the section for respondents applies to you.`,
     sections: [
@@ -776,11 +811,14 @@ export const termsPage = (host: string, contactEmail?: string) =>
     ],
   });
 
-export const privacyPage = (host: string, contactEmail?: string) =>
+export const privacyPage = (host: string, baseUrl: string, contactEmail?: string) =>
   legalPage({
     host,
+    baseUrl,
+    path: "/privacy",
     contactEmail,
     title: "Privacy policy",
+    description: "What Relay stores and why. Relay keeps as little as it can, never calls an AI model with your data, never sells data and shows no ads.",
     updated: "21 November 2026",
     intro: `This explains what the Relay service at ${host} stores and why. Relay keeps as little as it can, never calls an AI model with your data, never sells data and shows no ads.`,
     sections: [

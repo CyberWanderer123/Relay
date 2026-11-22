@@ -14,6 +14,8 @@ import { reviewRoutes } from "./routes/review.js";
 import type { Relay } from "./service.js";
 import { errorPage, homePage, notFoundPage, privacyPage, termsPage } from "./views/pages.js";
 import { SPEC_MD } from "./spec.js";
+import { OG_PNG_BASE64 } from "./views/og-image.js";
+import { llmsTxt, OG_IMAGE_PATH, sitemapXml } from "./views/seo.js";
 import { PAGE_JS } from "./views/scripts.js";
 import { themeCss } from "./views/theme.js";
 import { CSS, FAVICON_SVG } from "./views/styles.js";
@@ -82,8 +84,27 @@ export function createApp(relay: Relay, config: Config) {
     );
   });
   app.get("/healthz", (c) => c.json({ ok: true }));
-  app.get("/terms", (c) => c.html(termsPage(relay.host, config.contactEmail)));
-  app.get("/privacy", (c) => c.html(privacyPage(relay.host, config.contactEmail)));
+  app.get("/terms", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.html(termsPage(relay.host, relay.baseUrl, config.contactEmail));
+  });
+  app.get("/privacy", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.html(privacyPage(relay.host, relay.baseUrl, config.contactEmail));
+  });
+  const site = {
+    host: relay.host,
+    baseUrl: relay.baseUrl,
+    hosted: config.hosted ? { monthlyResponses: config.monthlyResponses } : undefined,
+  };
+  app.get("/sitemap.xml", (c) =>
+    c.body(sitemapXml(relay.baseUrl), 200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" }),
+  );
+  app.get("/llms.txt", (c) =>
+    c.body(llmsTxt(site), 200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" }),
+  );
+  const ogPng = Buffer.from(OG_PNG_BASE64, "base64");
+  app.get(OG_IMAGE_PATH, (c) => c.body(ogPng, 200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" }));
   // A form's brand colour as CSS variables. A stylesheet, not inline styles, so the CSP stays strict.
   app.get("/f/:id/theme.css", async (c) => {
     const form = await relay.findForm(c.req.param("id"));
@@ -105,7 +126,12 @@ export function createApp(relay: Relay, config: Config) {
   app.get("/favicon.svg", (c) => c.body(FAVICON_SVG, 200, { "Content-Type": "image/svg+xml" }));
   // Form pages must stay fetchable: "fill with Claude" has Claude read /a/:id (or the older /f/:id/clean), and Claude's
   // fetcher obeys robots.txt. Search engines are kept out by noindex headers/meta, not by this file.
-  app.get("/robots.txt", (c) => c.text("User-agent: *\nAllow: /a/\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\nDisallow: /x/\nDisallow: /oauth/\n"));
+  app.get("/robots.txt", (c) =>
+    c.text(
+      "User-agent: *\nAllow: /a/\nAllow: /f/\nDisallow: /c/\nDisallow: /api/\nDisallow: /mcp\nDisallow: /x/\nDisallow: /oauth/\n\n" +
+        `Sitemap: ${relay.baseUrl}/sitemap.xml\n`,
+    ),
+  );
 
   app.route("/", formRoutes(deps));
   app.route("/", cleanRoutes(deps));

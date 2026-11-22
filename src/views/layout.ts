@@ -61,6 +61,10 @@ export interface LayoutOptions {
   brand?: { themeHref?: string; logoUrl?: string; logoAlt?: string };
   /** Shown inside another site's iframe: no Relay header or footer. */
   embed?: boolean;
+  /** Public pages: canonical URL plus Open Graph / Twitter tags for link previews. */
+  social?: { url: string; image: string; imageWidth: number; imageHeight: number; siteName: string };
+  /** JSON-LD structured data, already serialised and safe inside <script>. */
+  jsonLd?: string;
 }
 
 export function layout(o: LayoutOptions): string {
@@ -72,6 +76,24 @@ export function layout(o: LayoutOptions): string {
 <title>${o.title}</title>
 ${o.description ? h`<meta name="description" content="${o.description}">` : ""}
 ${o.noindex ? h`<meta name="robots" content="noindex, nofollow">` : ""}
+${
+  o.social
+    ? h`<link rel="canonical" href="${o.social.url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="${o.social.siteName}">
+<meta property="og:title" content="${o.title}">
+${o.description ? h`<meta property="og:description" content="${o.description}">` : ""}
+<meta property="og:url" content="${o.social.url}">
+<meta property="og:image" content="${o.social.image}">
+<meta property="og:image:width" content="${String(o.social.imageWidth)}">
+<meta property="og:image:height" content="${String(o.social.imageHeight)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${o.title}">
+${o.description ? h`<meta name="twitter:description" content="${o.description}">` : ""}
+<meta name="twitter:image" content="${o.social.image}">`
+    : ""
+}
+${o.jsonLd ? h`<script type="application/ld+json">${trusted(o.jsonLd)}</script>` : ""}
 <meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0F1016" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
