@@ -429,7 +429,7 @@ describe("home page setup guide", () => {
     const html = await (await setup().app.request("/")).text();
     const href = /href="(https:\/\/vercel\.com\/new\/clone\?[^"]+)"/.exec(html)![1]!.replace(/&amp;/g, "&");
     const u = new URL(href);
-    expect(u.searchParams.get("repository-url")).toBe("https://github.com/CyberWanderer123/Relay");
+    expect(u.searchParams.get("repository-url")).toBe("https://github.com/anurag-ships/Relay");
     expect(u.searchParams.get("env")).toBe("RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN");
   });
 

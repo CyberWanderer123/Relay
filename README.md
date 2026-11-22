@@ -1,4 +1,4 @@
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN&envDescription=Your%20owner%20key%20(any%20long%20random%20secret)%20and%20your%20Turso%20database%20URL%20and%20token&envLink=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay%23deploy-to-vercel--turso-recommended)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fanurag-ships%2FRelay&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN&envDescription=Your%20owner%20key%20(any%20long%20random%20secret)%20and%20your%20Turso%20database%20URL%20and%20token&envLink=https%3A%2F%2Fgithub.com%2Fanurag-ships%2FRelay%23deploy-to-vercel--turso-recommended)
 
 # Relay
 
@@ -22,7 +22,7 @@ Requires **Node 22.13 or later** and git. Locally Relay stores everything in a S
 **1. Get the code and install:**
 
 ```bash
-git clone https://github.com/CyberWanderer123/Relay.git
+git clone https://github.com/anurag-ships/Relay.git
 cd Relay
 npm install
 ```
@@ -52,7 +52,7 @@ Open the printed form link to fill it in. To create forms from an assistant, con
 
 ## Deploy to Vercel + Turso (recommended)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN&envDescription=Your%20owner%20key%20(any%20long%20random%20secret)%20and%20your%20Turso%20database%20URL%20and%20token&envLink=https%3A%2F%2Fgithub.com%2FCyberWanderer123%2FRelay%23deploy-to-vercel--turso-recommended)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fanurag-ships%2FRelay&project-name=relay&repository-name=relay&env=RELAY_OWNER_KEY,TURSO_DATABASE_URL,TURSO_AUTH_TOKEN&envDescription=Your%20owner%20key%20(any%20long%20random%20secret)%20and%20your%20Turso%20database%20URL%20and%20token&envLink=https%3A%2F%2Fgithub.com%2Fanurag-ships%2FRelay%23deploy-to-vercel--turso-recommended)
 
 The button copies Relay into your Vercel account and asks for `RELAY_OWNER_KEY` (any long random secret: it is the password to your Relay) and your Turso database URL and token. The steps below do the same by hand.
 
