@@ -260,3 +260,7 @@ npm run spec      # after editing docs/agent-forms.md, copies it into src/spec.t
 | `test/` | Vitest suites |
 
 `test/__snapshots__/clean.test.ts.snap` holds the exact `/clean` text. Any change to the assistant instructions shows up there in review — update it deliberately with `npx vitest run -u`.
+
+## Licence
+
+Relay is open source under the [MIT License](LICENSE).

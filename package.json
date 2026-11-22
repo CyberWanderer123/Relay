@@ -13,7 +13,7 @@
     "spec": "node scripts/build-spec.mjs"
   },
   "author": "",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "description": "Relay — forms that travel through conversation. Create forms from Claude via MCP, share two links, read answers back.",
   "dependencies": {
     "@hono/node-server": "^2.1.9",
