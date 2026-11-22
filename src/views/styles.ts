@@ -494,8 +494,24 @@ pre.code .c { color: var(--muted); }
 .faq-grid h3 { margin: 0 0 6px; }
 .faq-grid p { margin: 0; color: var(--text-2); font-size: 15px; }
 
+/* ---------- use cases ---------- */
+.uc-block { margin-bottom: 56px; }
+.uc-block > h2, .uc-cta h2 { margin-top: 0; }
+.form-head .eyebrow a { color: inherit; }
+.uc-fields { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
+.uc-fields li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 15px; }
+.uc-fields li > span:first-child { flex: 1 1 auto; font-weight: 500; }
+.uc-fields small { flex-basis: 100%; color: var(--text-3); font-size: 13px; }
+.uc-cta { margin-bottom: 56px; padding: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); display: grid; gap: 12px; }
+.uc-cta p { margin: 0; color: var(--text-2); }
+.uc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+.uc-card { display: grid; gap: 6px; align-content: start; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); color: var(--text); text-decoration: none; }
+.uc-card:hover { border-color: var(--line-strong); color: var(--text); }
+.uc-card b { font-weight: 600; }
+.uc-card span { color: var(--text-2); font-size: 14.5px; }
+
 @media (max-width: 760px) {
-  .steps, .split, .principles, .hero-grid, .pillars, .understand-grid, .dev-grid, .faq-grid, .setup { grid-template-columns: 1fr; }
+  .steps, .split, .principles, .hero-grid, .pillars, .understand-grid, .dev-grid, .faq-grid, .uc-grid, .setup { grid-template-columns: 1fr; }
   .hero-grid { gap: 32px; }
   .split.feature > .mock-card.run { order: 2; }
   .split { gap: 20px; }

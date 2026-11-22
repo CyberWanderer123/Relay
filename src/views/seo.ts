@@ -2,6 +2,7 @@
    The FAQ shown on the home page and the FAQPage structured data come from the same list, so they never drift. */
 
 import { REPO_URL } from "./pages.js";
+import { USE_CASES, type UseCase } from "./use-cases.js";
 
 export const SITE_NAME = "Relay";
 /** "Relay" alone is ambiguous on the web; the MCP server and structured data also use this name. */
@@ -112,9 +113,25 @@ export function homeJsonLd(s: SiteInfo): string {
   return JSON.stringify(graph).replace(/</g, "\\u003c");
 }
 
+/** Breadcrumbs for the use-case index (no use case) or one use-case page. */
+export function useCaseJsonLd(baseUrl: string, uc?: UseCase): string {
+  const items = [
+    { name: SITE_NAME, url: `${baseUrl}/` },
+    { name: "Use cases", url: `${baseUrl}/for` },
+    ...(uc ? [{ name: uc.name, url: `${baseUrl}/for/${uc.slug}` }] : []),
+  ];
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((it, i) => ({ "@type": "ListItem", position: i + 1, name: it.name, item: it.url })),
+  };
+  return JSON.stringify(data).replace(/</g, "\\u003c");
+}
+
 /** Public, indexable pages. Forms, review pages and sign-in pages are private and stay out. */
 export function sitemapXml(baseUrl: string): string {
-  const urls = ["/", "/terms", "/privacy"].map((p) => `  <url><loc>${baseUrl}${p}</loc></url>`).join("\n");
+  const paths = ["/", "/for", ...USE_CASES.map((u) => `/for/${u.slug}`), "/terms", "/privacy"];
+  const urls = paths.map((p) => `  <url><loc>${baseUrl}${p}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 
@@ -143,6 +160,10 @@ export function llmsTxt(s: SiteInfo): string {
     "## Questions",
     "",
     ...faqs(s).flatMap((f) => [`### ${f.q}`, "", f.a, ""]),
+    "## Use cases",
+    "",
+    ...USE_CASES.map((u) => `- [${u.name}](${s.baseUrl}/for/${u.slug}): ${u.summary}`),
+    "",
     "## Links",
     "",
     `- [Home](${s.baseUrl}/): what Relay does and how to start`,

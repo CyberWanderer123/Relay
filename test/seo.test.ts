@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { faqs } from "../src/views/seo.js";
+import { USE_CASES } from "../src/views/use-cases.js";
 import { setup } from "./helpers.js";
 
 const hosted = () => setup({ hosted: true, monthlyResponses: 250 });
@@ -7,7 +8,7 @@ const hosted = () => setup({ hosted: true, monthlyResponses: 250 });
 function jsonLd(html: string) {
   const m = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
   expect(m).not.toBeNull();
-  return JSON.parse(m![1]!) as { "@graph": Array<Record<string, unknown>> };
+  return JSON.parse(m![1]!) as { "@type"?: string; "@graph": Array<Record<string, unknown>> };
 }
 
 describe("search and link previews", () => {
@@ -64,6 +65,31 @@ describe("search and link previews", () => {
     expect(res.headers.get("cache-control")).toContain("public");
     const bytes = new Uint8Array(await res.arrayBuffer());
     expect([...bytes.slice(1, 4)].map((b) => String.fromCharCode(b)).join("")).toBe("PNG");
+  });
+
+  it("every use case has its own page, linked from the home page, the index and the sitemap", async () => {
+    const { app } = hosted();
+    const home = await (await app.request("/")).text();
+    const index = await (await app.request("/for")).text();
+    const xml = await (await app.request("/sitemap.xml")).text();
+    const titles = new Set<string>();
+    for (const u of USE_CASES) {
+      const res = await app.request(`/for/${u.slug}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toContain("public");
+      const html = await res.text();
+      expect(html).toContain(`<link rel="canonical" href="https://relay.test/for/${u.slug}">`);
+      expect(html).toContain("https://relay.test/mcp");
+      expect(html).toContain("can't be recovered yet");
+      expect(jsonLd(html)["@type"]).toBe("BreadcrumbList");
+      for (const r of u.related) expect(USE_CASES.some((x) => x.slug === r)).toBe(true);
+      expect(home).toContain(`href="/for/${u.slug}"`);
+      expect(index).toContain(`href="/for/${u.slug}"`);
+      expect(xml).toContain(`<loc>https://relay.test/for/${u.slug}</loc>`);
+      titles.add(u.metaTitle);
+    }
+    expect(titles.size).toBe(USE_CASES.length);
+    expect((await app.request("/for/nope")).status).toBe(404);
   });
 
   it("legal pages are cacheable and have their own canonical URL; form pages stay private", async () => {

@@ -12,7 +12,8 @@ import { oauthRoutes } from "./oauth.js";
 import { formRoutes } from "./routes/form.js";
 import { reviewRoutes } from "./routes/review.js";
 import type { Relay } from "./service.js";
-import { errorPage, homePage, notFoundPage, privacyPage, termsPage } from "./views/pages.js";
+import { errorPage, homePage, notFoundPage, privacyPage, termsPage, useCasePage, useCasesIndexPage } from "./views/pages.js";
+import { findUseCase } from "./views/use-cases.js";
 import { SPEC_MD } from "./spec.js";
 import { OG_PNG_BASE64 } from "./views/og-image.js";
 import { llmsTxt, OG_IMAGE_PATH, sitemapXml } from "./views/seo.js";
@@ -97,6 +98,16 @@ export function createApp(relay: Relay, config: Config) {
     baseUrl: relay.baseUrl,
     hosted: config.hosted ? { monthlyResponses: config.monthlyResponses } : undefined,
   };
+  app.get("/for", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.html(useCasesIndexPage(site));
+  });
+  app.get("/for/:slug", (c) => {
+    const uc = findUseCase(c.req.param("slug"));
+    if (!uc) return c.html(notFoundPage(relay.host), 404);
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.html(useCasePage({ ...site, uc }));
+  });
   app.get("/sitemap.xml", (c) =>
     c.body(sitemapXml(relay.baseUrl), 200, { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, max-age=3600" }),
   );

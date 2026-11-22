@@ -7,7 +7,8 @@ import { PAGE_JS_VERSION } from "./scripts.js";
 import { themeCss, themeVersion } from "./theme.js";
 import { ASSISTANTS, type Assistant } from "../assistants.js";
 import { renderChatPrompt } from "../clean.js";
-import { faqs, homeJsonLd, OG_IMAGE_PATH, OG_IMAGE_SIZE, SITE_DESCRIPTION, SITE_NAME } from "./seo.js";
+import { faqs, homeJsonLd, OG_IMAGE_PATH, OG_IMAGE_SIZE, SITE_DESCRIPTION, SITE_NAME, useCaseJsonLd } from "./seo.js";
+import { USE_CASES, type UseCase } from "./use-cases.js";
 
 /** Canonical URL and link-preview tags for a public page. */
 const social = (baseUrl: string, path: string) => ({
@@ -620,6 +621,12 @@ export function homePage(o: {
   </ol>
 </section>
 
+<section class="faq" id="use-cases">
+  <p class="eyebrow"><span class="dot mint"></span>Use cases</p>
+  <h2>What people run with it</h2>
+  ${useCaseCards(USE_CASES)}
+</section>
+
 <section class="faq" id="faq">
   <p class="eyebrow"><span class="dot"></span>Questions</p>
   <h2>Questions people ask</h2>
@@ -845,3 +852,119 @@ export const privacyPage = (host: string, baseUrl: string, contactEmail?: string
       ]],
     ],
   });
+
+/* ------------------------------------------------------------------ */
+/* Use cases: /for and /for/:slug                                      */
+/* ------------------------------------------------------------------ */
+
+type SiteOpts = { host: string; baseUrl: string; hosted?: { monthlyResponses: number } };
+
+const useCaseCards = (list: UseCase[]) =>
+  h`<div class="uc-grid">${list.map((u) => h`<a class="uc-card" href="/for/${u.slug}"><b>${u.name}</b><span>${u.summary}</span></a>`)}</div>`;
+
+function tryItBlock(o: SiteOpts) {
+  return h`<section class="uc-cta">
+  <h2>Try it with your assistant</h2>
+  ${
+    o.hosted
+      ? h`<p>Add this address as a connector in Claude, ChatGPT or any MCP client, then create a free account. Free includes ${String(o.hosted.monthlyResponses)} responses a month.</p>
+  <code class="keybox">${o.baseUrl}/mcp</code>
+  <p class="fine">Save the account key you're shown at sign-up. It's how you sign in again or reconnect, and it can't be recovered yet.</p>`
+      : h`<p>Connect Claude, ChatGPT or any MCP client to this Relay:</p>
+  <code class="keybox">${o.baseUrl}/mcp</code>`
+  }
+  <div class="actions">
+    <a class="btn btn-ink btn-sm" href="/#start">How to connect ${icons.arrow}</a>
+    <a class="btn btn-ghost btn-sm" href="${REPO_URL}" rel="noopener noreferrer">Host it yourself: open source</a>
+  </div>
+</section>`;
+}
+
+export function useCasePage(o: SiteOpts & { uc: UseCase }): string {
+  const u = o.uc;
+  const related = u.related.map((s) => USE_CASES.find((x) => x.slug === s)).filter((x): x is UseCase => Boolean(x));
+  const body = h`
+<section class="form-head">
+  <p class="eyebrow"><span class="dot"></span><a href="/for">Use cases</a> · ${u.name}</p>
+  <h1 class="display">${u.title}</h1>
+  <p class="lede">${u.intro}</p>
+</section>
+
+<section class="split uc-block">
+  <div>
+    <p class="eyebrow"><span class="dot"></span>Ask</p>
+    <h2>Describe it in one message</h2>
+    <p>Say this to Claude, ChatGPT or any assistant connected to Relay. Change the details to fit.</p>
+  </div>
+  <div class="chat-mock" aria-label="Example message to an assistant">
+    <div class="bubble me">${u.prompt}</div>
+    <div class="bubble ai"><span class="tool">${icons.form}create_form</span>Done. Here's the link to share: ${o.host}/f/…</div>
+  </div>
+</section>
+
+<section class="split uc-block">
+  <div>
+    <h2>The form Relay builds</h2>
+    <ul class="uc-fields">
+      ${u.fields.map(([label, kind, note]) => h`<li><span>${label}</span><span class="chip">${kind}</span>${note ? h`<small>${note}</small>` : ""}</li>`)}
+    </ul>
+  </div>
+  <div>
+    <h2>Rules it keeps for you</h2>
+    <ul class="ticks">${u.rules.map((r) => h`<li>${icons.check}<span>${r}</span></li>`)}</ul>
+  </div>
+</section>
+
+<section class="understand uc-block">
+  <div class="understand-head">
+    <p class="eyebrow"><span class="dot mint"></span>Understand</p>
+    <h2>Then ask what people said</h2>
+    <p>Relay calculates the numbers exactly, so your assistant never has to guess them. Your assistant explains them and reads the written answers.</p>
+  </div>
+  <div class="understand-grid">
+    ${u.asks.map((a) => h`<div class="ask-card"><p class="ask">"${a.q}"</p><p class="answer-text">${a.a}</p></div>`)}
+  </div>
+</section>
+
+<section class="uc-block">
+  <h2>Good to know</h2>
+  <ul class="ticks">${u.tips.map((t) => h`<li>${icons.info}<span>${t}</span></li>`)}</ul>
+</section>
+
+${tryItBlock(o)}
+
+<section class="uc-block">
+  <h2>More ways to use Relay</h2>
+  ${useCaseCards(related)}
+</section>`;
+  return layout({
+    title: u.metaTitle,
+    description: u.description,
+    body,
+    host: o.host,
+    wide: true,
+    social: social(o.baseUrl, `/for/${u.slug}`),
+    jsonLd: useCaseJsonLd(o.baseUrl, u),
+  });
+}
+
+export function useCasesIndexPage(o: SiteOpts): string {
+  const body = h`
+<section class="form-head">
+  <p class="eyebrow"><span class="dot"></span>Use cases</p>
+  <h1 class="display">What you can run with Relay</h1>
+  <p class="lede">Each of these starts with one message to your AI assistant and ends with you asking what people said. Pick the one closest to yours to see the exact prompt, the form it creates and what to ask afterwards.</p>
+</section>
+<section class="uc-block">${useCaseCards(USE_CASES)}</section>
+${tryItBlock(o)}`;
+  return layout({
+    title: "Use cases: forms and surveys you run from ChatGPT or Claude · Relay",
+    description:
+      "Event RSVPs, waitlists, NPS surveys, volunteer sign-ups, job applications and more: see the exact prompt, the form Relay builds and what to ask.",
+    body,
+    host: o.host,
+    wide: true,
+    social: social(o.baseUrl, "/for"),
+    jsonLd: useCaseJsonLd(o.baseUrl),
+  });
+}
