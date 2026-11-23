@@ -202,6 +202,7 @@ Creator API (Bearer key): `POST /api/forms` · `GET /api/forms` · `GET /api/for
 | `TURSO_DATABASE_URL` (or `RELAY_DB_URL`) | `file:./data/relay.db` | `libsql://…` for Turso, `file:…` for a local SQLite file |
 | `TURSO_AUTH_TOKEN` (or `RELAY_DB_AUTH_TOKEN`) | — | Turso auth token |
 | `RELAY_DB_PATH` | — | Older form of a local file path, still accepted |
+| `RELAY_ANALYTICS` | off | On Vercel: add [Vercel Web Analytics](https://vercel.com/docs/analytics) to the public pages only (home, `/for`, terms, privacy), never form, review or sign-in pages. Enable Analytics in the Vercel project first. The privacy page then mentions it |
 | `RELAY_TRUST_PROXY` | on for Vercel, otherwise off | Read client IPs from `X-Forwarded-For` (only behind a proxy you trust) |
 | `RELAY_SUBMIT_PER_MINUTE` | `10` | Submissions per IP per minute |
 | `PORT` | `8787` | Listen port (local server only) |

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { loadConfig } from "../src/config.js";
 import { faqs } from "../src/views/seo.js";
 import { USE_CASES } from "../src/views/use-cases.js";
 import { setup } from "./helpers.js";
@@ -90,6 +91,36 @@ describe("search and link previews", () => {
     }
     expect(titles.size).toBe(USE_CASES.length);
     expect((await app.request("/for/nope")).status).toBe(404);
+  });
+
+  it("analytics is off by default and only on Vercel when RELAY_ANALYTICS is set", () => {
+    expect(loadConfig({ RELAY_ANALYTICS: "1" }).analytics).toBe(false);
+    expect(loadConfig({ VERCEL: "1", TURSO_DATABASE_URL: "libsql://x" }).analytics).toBe(false);
+    expect(loadConfig({ VERCEL: "1", RELAY_ANALYTICS: "1" }).analytics).toBe(true);
+  });
+
+  it("with analytics on, public pages load the script and allow it in the CSP; private pages don't", async () => {
+    const tag = '<script src="/_vercel/insights/script.js" defer></script>';
+    const { app, relay } = setup({ analytics: true });
+    for (const path of ["/", "/for", "/for/event-rsvp", "/terms", "/privacy"]) {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const csp = res.headers.get("content-security-policy")!;
+      expect(csp).toContain("script-src 'self'");
+      expect(csp).toContain("connect-src 'self'");
+      const html = await res.text();
+      expect(html).toContain(`${tag}\n</head>`);
+    }
+    expect(await (await app.request("/privacy")).text()).toContain("Vercel Web Analytics");
+    const { id } = await relay.createForm({ title: "T", fields: [{ id: "a", type: "short_text", label: "A" }] });
+    for (const path of [`/f/${id}`, `/a/${id}`, "/for/nope", "/sitemap.xml"]) {
+      const res = await app.request(path);
+      expect(await res.text()).not.toContain("_vercel/insights");
+      expect(res.headers.get("content-security-policy")).not.toContain("connect-src");
+    }
+    const off = await (await setup().app.request("/privacy")).text();
+    expect(off).not.toContain("_vercel/insights");
+    expect(off).not.toContain("Vercel Web Analytics");
   });
 
   it("legal pages are cacheable and have their own canonical URL; form pages stay private", async () => {

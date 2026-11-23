@@ -26,9 +26,10 @@ import { CSS, FAVICON_SVG } from "./views/styles.js";
  * /c/ fallback pages load one same-origin script; there are no inline scripts anywhere. Framing is
  * refused unless a form lists the sites allowed to embed it.
  */
-function csp(o: { script: boolean; frameAncestors?: string; formAction?: string }) {
+function csp(o: { script: boolean; connect?: boolean; frameAncestors?: string; formAction?: string }) {
   return [
     "default-src 'none'",
+    ...(o.connect ? ["connect-src 'self'"] : []),
     "style-src 'self' https://fonts.googleapis.com",
     "font-src https://fonts.gstatic.com",
     "img-src 'self' data: https:",
@@ -39,7 +40,11 @@ function csp(o: { script: boolean; frameAncestors?: string; formAction?: string 
   ].join("; ");
 }
 
+/** Public marketing pages. Only these get analytics: form, review and sign-in URLs can carry answers or codes. */
+const isPublicPage = (path: string) => /^\/(for(\/[a-z0-9-]+)?|terms|privacy)?$/.test(path);
 
+/** Vercel Web Analytics: a same-origin script that reports page views to /_vercel/insights (no cookies). */
+const ANALYTICS_TAG = `<script src="/_vercel/insights/script.js" defer></script>`;
 
 export function createApp(relay: Relay, config: Config) {
   const deps: Deps = { relay, config };
@@ -60,7 +65,21 @@ export function createApp(relay: Relay, config: Config) {
     c.res.headers.delete(FRAME_ANCESTORS_HEADER);
     const formAction = c.res.headers.get(FORM_ACTION_HEADER) || undefined;
     c.res.headers.delete(FORM_ACTION_HEADER);
-    c.header("Content-Security-Policy", csp({ script: /^\/(c|f)\//.test(c.req.path), frameAncestors, formAction }));
+    const analytics =
+      config.analytics &&
+      isPublicPage(c.req.path) &&
+      c.res.status === 200 &&
+      (c.res.headers.get("content-type") ?? "").startsWith("text/html");
+    if (analytics) {
+      const html = (await c.res.text()).replace("</head>", `${ANALYTICS_TAG}\n</head>`);
+      const headers = new Headers(c.res.headers);
+      headers.delete("content-length");
+      c.res = new Response(html, { status: 200, headers });
+    }
+    c.header(
+      "Content-Security-Policy",
+      csp({ script: analytics || /^\/(c|f)\//.test(c.req.path), connect: analytics, frameAncestors, formAction }),
+    );
     c.header("Referrer-Policy", "no-referrer");
     c.header("X-Content-Type-Options", "nosniff");
     // Old browsers ignore frame-ancestors; X-Frame-Options can't list several sites, so send it only when framing is refused.
@@ -91,7 +110,7 @@ export function createApp(relay: Relay, config: Config) {
   });
   app.get("/privacy", (c) => {
     c.header("Cache-Control", "public, max-age=3600");
-    return c.html(privacyPage(relay.host, relay.baseUrl, config.contactEmail));
+    return c.html(privacyPage(relay.host, relay.baseUrl, config.contactEmail, config.analytics));
   });
   const site = {
     host: relay.host,

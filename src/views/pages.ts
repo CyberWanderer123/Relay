@@ -818,7 +818,7 @@ export const termsPage = (host: string, baseUrl: string, contactEmail?: string) 
     ],
   });
 
-export const privacyPage = (host: string, baseUrl: string, contactEmail?: string) =>
+export const privacyPage = (host: string, baseUrl: string, contactEmail?: string, analytics = false) =>
   legalPage({
     host,
     baseUrl,
@@ -839,6 +839,11 @@ export const privacyPage = (host: string, baseUrl: string, contactEmail?: string
       ]],
       ["Services Relay relies on", [
         "Hosting runs on Vercel and data is stored in a Turso database. Pages load fonts from Google Fonts, and a form's logo loads from the address its creator chose, so those services can see your network address when you open a page.",
+        ...(analytics
+          ? [
+              "The public pages of this site (the home page, use-case pages, terms and privacy) use Vercel Web Analytics to count visits. It sets no cookies and records the page, referrer, country, browser and device type, not who you are. Form pages, review pages and sign-in pages are not counted.",
+            ]
+          : []),
         "When you use an AI assistant with Relay, that assistant's own privacy terms apply to what you share with it.",
       ]],
       ["How long data is kept", [

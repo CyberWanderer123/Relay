@@ -24,6 +24,8 @@ export interface Config {
   contactEmail?: string;
   /** Running on Vercel (set by the platform). */
   onVercel: boolean;
+  /** Vercel Web Analytics on public pages (home, use cases, legal). Opt-in, and only on Vercel. */
+  analytics: boolean;
 }
 
 /** Load KEY=value pairs from ./.env if present. Real environment variables win. */
@@ -67,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     monthlyResponses: Math.max(1, Number(env.RELAY_MONTHLY_RESPONSES ?? 250) || 250),
     contactEmail: env.RELAY_CONTACT_EMAIL?.trim() || undefined,
     onVercel,
+    analytics: onVercel && flag(env.RELAY_ANALYTICS, false),
   };
 }
 
